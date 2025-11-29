@@ -1,0 +1,85 @@
+services:
+  web:
+    build: .  # Build Dockerfile from current directory
+    container_name: proudlyzimmart_web
+    image: 7612/proudlyzimmart-backend:0.1.0
+    ports:
+      - "8002:8000"   # 👈 Map container port 8000 to host port 8000
+
+    # Mount volumes
+    volumes:
+      - .:/app                    # Mount project code for live development (hot reload)
+      - proudlyzimmart_static:/app/static  # Persistent storage for static files
+      - proudlyzimmart_media:/app/media    # Persistent storage for uploaded media
+    env_file:
+      - .env                       # Load environment variables from .env file
+    depends_on:
+      db:
+        condition: service_healthy # Wait for DB to be healthy before starting web
+    restart: unless-stopped         # Always restart unless container is stopped manually   
+    networks:
+      - proudlyzimmart_net     
+
+  db:
+    image: postgis/postgis:17-3.5  # PostgreSQL 17 with PostGIS 3.5
+    container_name: proudlyzimmart_db
+    # Persistent volume to keep DB data even if container is removed
+    volumes:
+      - proudlyzimmart_db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # Loaded from .env
+      POSTGRES_USER: ${POSTGRES_USER}          # Loaded from .env
+      POSTGRES_DB: ${POSTGRES_DB}              # Loaded from .env
+    # Healthcheck to ensure DB is ready before web starts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s        # Check every 10 seconds
+      retries: 5           # Maximum 5 retries before marking as unhealthy
+      start_period: 30s    # Wait 30 seconds before starting health checks
+      timeout: 10s         # Max 10 seconds per health check
+    restart: unless-stopped  # Restart DB if it crashes   
+    networks:
+      - proudlyzimmart_net      
+
+  nginx:
+    image: nginx:latest
+    container_name: proudlyzimmart_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - proudlyzimmart_static:/app/static
+      - proudlyzimmart_media:/app/media   
+      - proudlyzimmart_certbot_etc:/etc/letsencrypt   # ✅ certs available to Nginx
+      - proudlyzimmart_certbot_var:/var/lib/letsencrypt
+    depends_on:
+      - web
+    restart: unless-stopped    
+    networks:
+      - proudlyzimmart_net         
+
+  certbot:
+    image: certbot/certbot
+    container_name: proudlyzimmart_certbot
+    volumes:
+      - proudlyzimmart_certbot_etc:/etc/letsencrypt
+      - proudlyzimmart_certbot_var:/var/lib/letsencrypt
+      - ./nginx/conf.d:/etc/nginx/conf.d  # So Certbot can access nginx config if needed
+      - proudlyzimmart_static:/app/static
+    entrypoint: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; certbot renew; done'"
+    restart: unless-stopped    
+    networks:
+      - proudlyzimmart_net       
+
+# Define named volumes
+volumes:
+  proudlyzimmart_db:    # Stores PostgreSQL data persistently
+  proudlyzimmart_static:  # Stores static files persistently
+  proudlyzimmart_media:   # Stores uploaded media persistently
+  proudlyzimmart_certbot_etc:    # Stores Let's Encrypt certificates
+  proudlyzimmart_certbot_var:    # Stores Certbot working files  
+  
+networks:
+  proudlyzimmart_net:    
+
