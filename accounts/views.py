@@ -1,3 +1,341 @@
-from django.shortcuts import render
+"""
+API views for authentication endpoints.
+Handles registration, login, logout, password management, and social authentication.
+"""
+from rest_framework import generics, status, permissions
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.facebook.views import FacebookOAuth2Adapter
+from dj_rest_auth.registration.views import SocialLoginView
 
-# Create your views here.
+from .serializers import (
+    RegisterSerializer,
+    LoginSerializer,
+    UserSerializer,
+    ChangePasswordSerializer,
+    PasswordResetSerializer,
+    PasswordResetConfirmSerializer,
+)
+from .services import (
+    get_tokens_for_user,
+    send_verification_email,
+    send_password_reset_email,
+)
+
+User = get_user_model()
+
+
+class RegisterView(generics.CreateAPIView):
+    """
+    User registration endpoint.
+    
+    POST /api/accounts/register/
+    Creates a new user account.
+    """
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save(request)
+        
+        # Generate tokens
+        tokens = get_tokens_for_user(user)
+        
+        # Return user data and tokens
+        # Include tokens at root level for frontend compatibility
+        user_serializer = UserSerializer(user)
+        return Response({
+            'user': user_serializer.data,
+            'access_token': tokens['access'],
+            'refresh_token': tokens['refresh'],
+            'access': tokens['access'],
+            'refresh': tokens['refresh'],
+            'tokens': tokens,
+            'message': 'Registration successful.'
+        }, status=status.HTTP_201_CREATED)
+
+
+class LoginView(APIView):
+    """
+    User login endpoint.
+    
+    POST /api/accounts/login/
+    Authenticates user with email/username and password, returns JWT tokens.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        
+        # Generate tokens
+        tokens = get_tokens_for_user(user)
+        
+        # Return user data and tokens
+        # Include tokens at root level for frontend compatibility
+        user_serializer = UserSerializer(user)
+        return Response({
+            'user': user_serializer.data,
+            'access_token': tokens['access'],
+            'refresh_token': tokens['refresh'],
+            'access': tokens['access'],
+            'refresh': tokens['refresh'],
+            'tokens': tokens,
+            'message': 'Login successful.'
+        }, status=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    """
+    User logout endpoint.
+    
+    POST /api/accounts/logout/
+    Blacklists the refresh token to invalidate user session.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data.get('refresh_token')
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+                return Response({
+                    'message': 'Successfully logged out.'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'error': 'Refresh token is required.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except TokenError:
+            return Response({
+                'error': 'Invalid token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChangePasswordView(generics.UpdateAPIView):
+    """
+    Change password endpoint.
+    
+    PUT /api/accounts/change-password/
+    Allows authenticated users to change their password.
+    """
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        
+        return Response({
+            'message': 'Password changed successfully.'
+        }, status=status.HTTP_200_OK)
+
+
+class PasswordResetView(APIView):
+    """
+    Request password reset endpoint.
+    
+    POST /api/accounts/password-reset/
+    Sends password reset email to user.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+            send_password_reset_email(request, user)
+            return Response({
+                'message': 'Password reset email has been sent.'
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            # Don't reveal if email exists for security
+            return Response({
+                'message': 'If an account exists with this email, a password reset link has been sent.'
+            }, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    Confirm password reset endpoint.
+    
+    POST /api/accounts/password-reset-confirm/
+    Resets password using token from email.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        uid = serializer.validated_data['uid']
+        token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password1']
+        
+        try:
+            # Decode user ID
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+            
+            # Verify token
+            if default_token_generator.check_token(user, token):
+                user.set_password(new_password)
+                user.save()
+                return Response({
+                    'message': 'Password has been reset successfully.'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'error': 'Invalid or expired token.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({
+                'error': 'Invalid user ID.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class VerifyEmailView(APIView):
+    """
+    Email verification endpoint.
+    
+    POST /api/accounts/verify-email/
+    Verifies user email using confirmation key from email.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        key = request.data.get('key')
+        if not key:
+            return Response({
+                'error': 'Verification key is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Try to get email confirmation
+            email_confirmation = EmailConfirmationHMAC.from_key(key)
+            if email_confirmation is None:
+                email_confirmation = EmailConfirmation.objects.filter(key=key).first()
+            
+            if email_confirmation:
+                email_confirmation.confirm(request)
+                return Response({
+                    'message': 'Email verified successfully.'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'error': 'Invalid or expired verification key.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ResendVerificationEmailView(APIView):
+    """
+    Resend verification email endpoint.
+    
+    POST /api/accounts/resend-verification/
+    Resends email verification to user.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({
+                'error': 'Email is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(email=email)
+            if user.email_verified:
+                return Response({
+                    'message': 'Email is already verified.'
+                }, status=status.HTTP_200_OK)
+            
+            send_verification_email(request, user)
+            return Response({
+                'message': 'Verification email has been sent.'
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({
+                'error': 'No user found with this email address.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    """
+    User profile endpoint.
+    
+    GET /api/accounts/profile/
+    PUT /api/accounts/profile/
+    Retrieve or update authenticated user profile.
+    """
+    serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+
+# Social Authentication Views
+
+class GoogleLoginView(SocialLoginView):
+    """
+    Google OAuth2 login endpoint.
+    
+    POST /api/accounts/google/
+    Authenticates user with Google OAuth2 token.
+    Returns user data and JWT tokens.
+    """
+    adapter_class = GoogleOAuth2Adapter
+    
+    def post(self, request, *args, **kwargs):
+        """Override to return consistent response format."""
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            # Response already contains user and token data from dj-rest-auth
+            return response
+        return response
+
+
+class FacebookLoginView(SocialLoginView):
+    """
+    Facebook OAuth2 login endpoint.
+    
+    POST /api/accounts/facebook/
+    Authenticates user with Facebook OAuth2 token.
+    Returns user data and JWT tokens.
+    """
+    adapter_class = FacebookOAuth2Adapter
+    
+    def post(self, request, *args, **kwargs):
+        """Override to return consistent response format."""
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            # Response already contains user and token data from dj-rest-auth
+            return response
+        return response

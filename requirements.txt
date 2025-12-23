@@ -3,6 +3,7 @@ asgiref==3.11.0
 beautifulsoup4==4.14.2
 certifi==2025.11.12
 charset-normalizer==3.4.4
+cryptography==43.0.3
 defusedxml==0.7.1
 Django==5.2.8
 django-filter==25.2
@@ -13,6 +14,10 @@ django-taggit==6.1.0
 django-tasks==0.9.0
 django-treebeard==4.7.1
 djangorestframework==3.16.1
+djangorestframework-simplejwt==5.3.1
+django-allauth==65.1.0
+dj-rest-auth==6.0.0
+django-cors-headers==4.6.0
 draftjs_exporter==5.1.0
 et_xmlfile==2.0.0
 filetype==1.2.0

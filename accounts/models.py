@@ -4,6 +4,11 @@ from django.contrib.auth.hashers import make_password
 
 
 class CustomUser(AbstractUser):
+    """
+    Custom user model extending AbstractUser.
+    Supports email verification and additional user fields.
+    """
+    email_verified = models.BooleanField(default=False)
     dob = models.DateField(null=True, blank=True)
     sex_choices = [
         ('M', 'Male'),
