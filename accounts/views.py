@@ -179,16 +179,26 @@ class PasswordResetConfirmView(APIView):
     Confirm password reset endpoint.
     
     POST /api/accounts/password-reset-confirm/
+    POST /api/accounts/password-reset-confirm/<uidb64>-<token>/
     Resets password using token from email.
+    
+    Accepts token in two formats:
+    1. URL path: /api/accounts/password-reset-confirm/{uidb64}-{token}/
+    2. Request body: {"token_key": "uidb64-token", "new_password1": "...", "new_password2": "..."}
+    3. Request body: {"uid": "uidb64", "token": "token", "new_password1": "...", "new_password2": "..."}
     """
     permission_classes = [permissions.AllowAny]
 
-    def post(self, request):
-        serializer = PasswordResetConfirmSerializer(data=request.data)
+    def post(self, request, token_key=None):
+        data = request.data.copy()
+        
+        if token_key:
+            data['token_key'] = token_key
+        
+        serializer = PasswordResetConfirmSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         
-        uid = serializer.validated_data['uid']
-        token = serializer.validated_data['token']
+        uid, token = serializer.get_uid_and_token()
         new_password = serializer.validated_data['new_password1']
         
         try:
@@ -205,7 +215,45 @@ class PasswordResetConfirmView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({
-                'error': 'Invalid user ID.'
+                'error': 'Invalid user ID or token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetTokenValidateView(APIView):
+    """
+    Validate password reset token endpoint.
+    
+    GET /api/accounts/password-reset/validate/<uidb64>-<token>/
+    Validates if a password reset token is valid without resetting the password.
+    Useful for frontend to check if the token is valid before showing the reset form.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, token_key):
+        if '-' not in token_key:
+            return Response({
+                'valid': False,
+                'error': 'Invalid token format. Expected: uidb64-token'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            uid, token = token_key.rsplit('-', 1)
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+            
+            if default_token_generator.check_token(user, token):
+                return Response({
+                    'valid': True,
+                    'message': 'Token is valid.'
+                }, status=status.HTTP_200_OK)
+            return Response({
+                'valid': False,
+                'error': 'Invalid or expired token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({
+                'valid': False,
+                'error': 'Invalid user ID or token.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
 

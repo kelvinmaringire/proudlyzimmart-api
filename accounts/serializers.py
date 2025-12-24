@@ -181,9 +181,11 @@ class PasswordResetSerializer(serializers.Serializer):
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """
     Serializer for confirming password reset with token.
+    Accepts either separate uid/token or combined token_key from URL.
     """
-    token = serializers.CharField(required=True)
-    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=False)
+    uid = serializers.CharField(required=False)
+    token_key = serializers.CharField(required=False, help_text="Combined format: uidb64-token")
     new_password1 = serializers.CharField(
         write_only=True,
         required=True,
@@ -195,15 +197,35 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         style={'input_type': 'password'}
     )
 
+    def validate(self, data):
+        """Validate that either token_key or both uid and token are provided."""
+        token_key = data.get('token_key')
+        token = data.get('token')
+        uid = data.get('uid')
+        
+        if not token_key and not (token and uid):
+            raise serializers.ValidationError(
+                "Either 'token_key' (format: uidb64-token) or both 'uid' and 'token' must be provided."
+            )
+        
+        if data['new_password1'] != data['new_password2']:
+            raise serializers.ValidationError({"new_password2": "The two password fields didn't match."})
+        
+        return data
+
     def validate_new_password1(self, value):
         """Validate new password."""
         temp_user = User()
         validate_password(value, temp_user)
         return value
 
-    def validate(self, data):
-        """Validate that new passwords match."""
-        if data['new_password1'] != data['new_password2']:
-            raise serializers.ValidationError({"new_password2": "The two password fields didn't match."})
-        return data
+    def get_uid_and_token(self):
+        """Extract uid and token from either format."""
+        if self.validated_data.get('token_key'):
+            token_key = self.validated_data['token_key']
+            if '-' in token_key:
+                uid, token = token_key.rsplit('-', 1)
+                return uid, token
+            raise serializers.ValidationError({"token_key": "Invalid token format. Expected: uidb64-token"})
+        return self.validated_data['uid'], self.validated_data['token']
 

@@ -4,7 +4,12 @@ Handles token generation, email sending, and other authentication-related operat
 """
 from rest_framework_simplejwt.tokens import RefreshToken
 from allauth.account.utils import send_email_confirmation
-from allauth.account.forms import ResetPasswordForm
+from allauth.account.adapter import get_adapter
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.conf import settings
 
 
 def get_tokens_for_user(user):
@@ -22,7 +27,9 @@ def send_verification_email(request, user):
 
 
 def send_password_reset_email(request, user):
-    """Send password reset email to user."""
+    """Send password reset email to user with custom frontend URL."""
+    from allauth.account.forms import ResetPasswordForm
+    
     form = ResetPasswordForm({'email': user.email})
     if form.is_valid():
         form.save(request)

@@ -218,13 +218,78 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 6. Confirm Password Reset
+### 6. Validate Password Reset Token
 
-**Endpoint:** `POST /api/accounts/password-reset-confirm/`
+**Endpoint:** `GET /api/accounts/password-reset/validate/<uidb64>-<token>/`
 
-**Description:** Reset password using token from email.
+**Description:** Validate if a password reset token is valid without resetting the password. Useful for frontend to check token validity before showing reset form.
 
 **Authentication:** Not required
+
+**URL Parameters:**
+- `uidb64-token`: Combined token from email link (e.g., `1-d1b4o1-9e4d96fb02b86b5edb66171e08d58dc4`)
+
+**Response (200 OK):**
+```json
+{
+  "valid": true,
+  "message": "Token is valid."
+}
+```
+
+**Error Response (400 Bad Request):**
+```json
+{
+  "valid": false,
+  "error": "Invalid or expired token."
+}
+```
+
+---
+
+### 7. Confirm Password Reset
+
+**Endpoint:** `POST /api/accounts/password-reset-confirm/<uidb64>-<token>/`  
+**Endpoint:** `POST /api/accounts/password-reset-confirm/`
+
+**Description:** Reset password using token from email. Supports multiple formats:
+1. Token in URL path (recommended for frontend)
+2. Token in request body as `token_key`
+3. Separate `uid` and `token` in request body (legacy format)
+
+**Authentication:** Not required
+
+**Format 1: Token in URL (Recommended)**
+```
+POST /api/accounts/password-reset-confirm/1-d1b4o1-9e4d96fb02b86b5edb66171e08d58dc4/
+```
+
+**Request Body:**
+```json
+{
+  "new_password1": "NewSecurePassword123!",
+  "new_password2": "NewSecurePassword123!"
+}
+```
+
+**Format 2: Token in Body**
+```
+POST /api/accounts/password-reset-confirm/
+```
+
+**Request Body:**
+```json
+{
+  "token_key": "1-d1b4o1-9e4d96fb02b86b5edb66171e08d58dc4",
+  "new_password1": "NewSecurePassword123!",
+  "new_password2": "NewSecurePassword123!"
+}
+```
+
+**Format 3: Separate uid and token (Legacy)**
+```
+POST /api/accounts/password-reset-confirm/
+```
 
 **Request Body:**
 ```json
@@ -250,9 +315,17 @@ Authorization: Bearer <access_token>
 }
 ```
 
+or
+
+```json
+{
+  "new_password2": ["The two password fields didn't match."]
+}
+```
+
 ---
 
-### 7. Verify Email
+### 8. Verify Email
 
 **Endpoint:** `POST /api/accounts/verify-email/`
 
@@ -283,7 +356,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 8. Resend Verification Email
+### 9. Resend Verification Email
 
 **Endpoint:** `POST /api/accounts/resend-verification/`
 
@@ -314,7 +387,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 9. Get/Update User Profile
+### 10. Get/Update User Profile
 
 **Endpoint:** `GET /api/accounts/profile/`  
 **Endpoint:** `PUT /api/accounts/profile/`
@@ -371,7 +444,7 @@ Authorization: Bearer <access_token>
 
 ## Social Authentication
 
-### 10. Google OAuth2 Login
+### 11. Google OAuth2 Login
 
 **Endpoint:** `POST /api/accounts/google/`
 
@@ -410,7 +483,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 11. Facebook OAuth2 Login
+### 12. Facebook OAuth2 Login
 
 **Endpoint:** `POST /api/accounts/facebook/`
 

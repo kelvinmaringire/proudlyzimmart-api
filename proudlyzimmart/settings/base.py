@@ -139,6 +139,9 @@ SIMPLE_JWT = {
 
 ############### Django Allauth Settings ################
 
+# Frontend URL for email links and CORS
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:9000')
+
 # Account Configuration
 ACCOUNT_AUTHENTICATION_METHOD = 'username_email'  # Allow login with username or email
 ACCOUNT_EMAIL_REQUIRED = True
@@ -149,6 +152,14 @@ ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 ACCOUNT_USER_MODEL_EMAIL_FIELD = 'email'
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 
+# Frontend URLs for headless mode (password reset, email verification, etc.)
+# The {key} placeholder will be replaced with uidb64-token format
+HEADLESS_FRONTEND_URLS = {
+    'account_reset_password_from_key': f'{FRONTEND_URL}/password/reset/key/{{key}}/',
+    'account_email_verification_sent': f'{FRONTEND_URL}/verify-email/',
+    'account_confirm_email': f'{FRONTEND_URL}/verify-email?key={{key}}',
+}
+
 # Email Configuration
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
@@ -157,9 +168,6 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@proudlyzimmart.com')
-
-# Frontend URL for email links and CORS
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
 
 # Social Account Configuration
 SOCIALACCOUNT_AUTO_SIGNUP = True
