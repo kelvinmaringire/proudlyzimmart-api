@@ -213,9 +213,13 @@ class PasswordResetConfirmView(APIView):
             return Response({
                 'error': 'Invalid or expired token.'
             }, status=status.HTTP_400_BAD_REQUEST)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        except (TypeError, ValueError, OverflowError) as e:
             return Response({
-                'error': 'Invalid user ID or token.'
+                'error': f'Invalid token format: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Invalid user ID.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -237,7 +241,7 @@ class PasswordResetTokenValidateView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            uid, token = token_key.rsplit('-', 1)
+            uid, token = token_key.split('-', 1)
             user_id = force_str(urlsafe_base64_decode(uid))
             user = User.objects.get(pk=user_id)
             
@@ -250,10 +254,15 @@ class PasswordResetTokenValidateView(APIView):
                 'valid': False,
                 'error': 'Invalid or expired token.'
             }, status=status.HTTP_400_BAD_REQUEST)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        except (TypeError, ValueError, OverflowError) as e:
             return Response({
                 'valid': False,
-                'error': 'Invalid user ID or token.'
+                'error': f'Invalid token format: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({
+                'valid': False,
+                'error': 'Invalid user ID.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
 

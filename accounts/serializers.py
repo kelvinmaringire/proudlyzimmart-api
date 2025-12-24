@@ -220,11 +220,16 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return value
 
     def get_uid_and_token(self):
-        """Extract uid and token from either format."""
+        """Extract uid and token from either format.
+        
+        Token format: uidb64-token
+        Since tokens can contain dashes, we split on the FIRST dash only.
+        Example: 'MQ-d1b6kd-fc8e2f628c4e8c960ba419a28bc2fbaf' -> uid='MQ', token='d1b6kd-fc8e2f628c4e8c960ba419a28bc2fbaf'
+        """
         if self.validated_data.get('token_key'):
             token_key = self.validated_data['token_key']
             if '-' in token_key:
-                uid, token = token_key.rsplit('-', 1)
+                uid, token = token_key.split('-', 1)
                 return uid, token
             raise serializers.ValidationError({"token_key": "Invalid token format. Expected: uidb64-token"})
         return self.validated_data['uid'], self.validated_data['token']
