@@ -3,7 +3,6 @@ API views for authentication endpoints.
 Handles registration, login, logout, password management, and social authentication.
 """
 from rest_framework import generics, status, permissions
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
@@ -34,6 +33,21 @@ from .services import (
 User = get_user_model()
 
 
+def _build_auth_response(user, message):
+    """Build standardized authentication response with user data and tokens."""
+    tokens = get_tokens_for_user(user)
+    user_serializer = UserSerializer(user)
+    return {
+        'user': user_serializer.data,
+        'access_token': tokens['access'],
+        'refresh_token': tokens['refresh'],
+        'access': tokens['access'],
+        'refresh': tokens['refresh'],
+        'tokens': tokens,
+        'message': message
+    }
+
+
 class RegisterView(generics.CreateAPIView):
     """
     User registration endpoint.
@@ -49,22 +63,10 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save(request)
-        
-        # Generate tokens
-        tokens = get_tokens_for_user(user)
-        
-        # Return user data and tokens
-        # Include tokens at root level for frontend compatibility
-        user_serializer = UserSerializer(user)
-        return Response({
-            'user': user_serializer.data,
-            'access_token': tokens['access'],
-            'refresh_token': tokens['refresh'],
-            'access': tokens['access'],
-            'refresh': tokens['refresh'],
-            'tokens': tokens,
-            'message': 'Registration successful.'
-        }, status=status.HTTP_201_CREATED)
+        return Response(
+            _build_auth_response(user, 'Registration successful.'),
+            status=status.HTTP_201_CREATED
+        )
 
 
 class LoginView(APIView):
@@ -80,22 +82,10 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-        
-        # Generate tokens
-        tokens = get_tokens_for_user(user)
-        
-        # Return user data and tokens
-        # Include tokens at root level for frontend compatibility
-        user_serializer = UserSerializer(user)
-        return Response({
-            'user': user_serializer.data,
-            'access_token': tokens['access'],
-            'refresh_token': tokens['refresh'],
-            'access': tokens['access'],
-            'refresh': tokens['refresh'],
-            'tokens': tokens,
-            'message': 'Login successful.'
-        }, status=status.HTTP_200_OK)
+        return Response(
+            _build_auth_response(user, 'Login successful.'),
+            status=status.HTTP_200_OK
+        )
 
 
 class LogoutView(APIView):
@@ -130,21 +120,29 @@ class LogoutView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ChangePasswordView(generics.UpdateAPIView):
+class ChangePasswordView(APIView):
     """
     Change password endpoint.
     
     PUT /api/accounts/change-password/
+    PATCH /api/accounts/change-password/
     Allows authenticated users to change their password.
     """
-    serializer_class = ChangePasswordSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def update(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={'request': request})
+    def put(self, request, *args, **kwargs):
+        """Handle PUT request for password change."""
+        return self._change_password(request)
+
+    def patch(self, request, *args, **kwargs):
+        """Handle PATCH request for password change."""
+        return self._change_password(request)
+
+    def _change_password(self, request):
+        """Common logic for password change."""
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        
         return Response({
             'message': 'Password changed successfully.'
         }, status=status.HTTP_200_OK)
@@ -171,7 +169,6 @@ class PasswordResetView(APIView):
                 'message': 'Password reset email has been sent.'
             }, status=status.HTTP_200_OK)
         except User.DoesNotExist:
-            # Don't reveal if email exists for security
             return Response({
                 'message': 'If an account exists with this email, a password reset link has been sent.'
             }, status=status.HTTP_200_OK)
@@ -195,21 +192,17 @@ class PasswordResetConfirmView(APIView):
         new_password = serializer.validated_data['new_password1']
         
         try:
-            # Decode user ID
             user_id = force_str(urlsafe_base64_decode(uid))
             user = User.objects.get(pk=user_id)
-            
-            # Verify token
             if default_token_generator.check_token(user, token):
                 user.set_password(new_password)
                 user.save()
                 return Response({
                     'message': 'Password has been reset successfully.'
                 }, status=status.HTTP_200_OK)
-            else:
-                return Response({
-                    'error': 'Invalid or expired token.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Invalid or expired token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({
                 'error': 'Invalid user ID.'
@@ -233,7 +226,6 @@ class VerifyEmailView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Try to get email confirmation
             email_confirmation = EmailConfirmationHMAC.from_key(key)
             if email_confirmation is None:
                 email_confirmation = EmailConfirmation.objects.filter(key=key).first()
@@ -243,10 +235,9 @@ class VerifyEmailView(APIView):
                 return Response({
                     'message': 'Email verified successfully.'
                 }, status=status.HTTP_200_OK)
-            else:
-                return Response({
-                    'error': 'Invalid or expired verification key.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Invalid or expired verification key.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({
                 'error': str(e)
@@ -301,8 +292,6 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
-# Social Authentication Views
-
 class GoogleLoginView(SocialLoginView):
     """
     Google OAuth2 login endpoint.
@@ -312,14 +301,6 @@ class GoogleLoginView(SocialLoginView):
     Returns user data and JWT tokens.
     """
     adapter_class = GoogleOAuth2Adapter
-    
-    def post(self, request, *args, **kwargs):
-        """Override to return consistent response format."""
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            # Response already contains user and token data from dj-rest-auth
-            return response
-        return response
 
 
 class FacebookLoginView(SocialLoginView):
@@ -331,11 +312,3 @@ class FacebookLoginView(SocialLoginView):
     Returns user data and JWT tokens.
     """
     adapter_class = FacebookOAuth2Adapter
-    
-    def post(self, request, *args, **kwargs):
-        """Override to return consistent response format."""
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            # Response already contains user and token data from dj-rest-auth
-            return response
-        return response

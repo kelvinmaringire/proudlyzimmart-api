@@ -98,7 +98,6 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, data):
         """Validate login credentials."""
-        # Get login value from any of the possible fields
         login = data.get('login') or data.get('username') or data.get('email')
         password = data.get('password')
 
@@ -108,10 +107,8 @@ class LoginSerializer(serializers.Serializer):
         if not password:
             raise serializers.ValidationError("Password is required.")
 
-        # Try to authenticate with username
         user = authenticate(username=login, password=password)
         
-        # If username fails, try email
         if user is None:
             try:
                 user_obj = User.objects.get(email=login)
@@ -124,10 +121,6 @@ class LoginSerializer(serializers.Serializer):
         
         if not user.is_active:
             raise serializers.ValidationError("User account is disabled.")
-        
-        # Check email verification status (informative, but don't block login)
-        # Note: Email verification is handled by allauth, but we allow login
-        # The frontend can check email_verified status from user data
         
         data['user'] = user
         return data
@@ -181,16 +174,8 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class PasswordResetSerializer(serializers.Serializer):
-    """
-    Serializer for requesting password reset.
-    """
+    """Serializer for requesting password reset."""
     email = serializers.EmailField(required=True)
-
-    def validate_email(self, email):
-        """Validate email exists."""
-        if not User.objects.filter(email=email).exists():
-            raise serializers.ValidationError("No user found with this email address.")
-        return email
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
@@ -212,9 +197,6 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     def validate_new_password1(self, value):
         """Validate new password."""
-        # We'll validate against a temporary user object
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
         temp_user = User()
         validate_password(value, temp_user)
         return value
