@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "home",
     "search",
     "accounts",
+    "products",
     
     # CORS Headers
     "corsheaders",
@@ -69,6 +70,7 @@ INSTALLED_APPS = [
     "wagtail.search",
     "wagtail.admin",
     "wagtail",
+    "wagtail_modeladmin",
     "modelcluster",
     "taggit",
     "django_filters",

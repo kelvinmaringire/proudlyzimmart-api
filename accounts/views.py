@@ -6,12 +6,12 @@ from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
-from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC
+from allauth.account.forms import ResetPasswordKeyForm
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.facebook.views import FacebookOAuth2Adapter
 from dj_rest_auth.registration.views import SocialLoginView
@@ -33,7 +33,7 @@ from .services import (
 User = get_user_model()
 
 
-def _build_auth_response(user, message):
+def build_auth_response(user, message):
     """Build standardized authentication response with user data and tokens."""
     tokens = get_tokens_for_user(user)
     user_serializer = UserSerializer(user)
@@ -41,8 +41,6 @@ def _build_auth_response(user, message):
         'user': user_serializer.data,
         'access_token': tokens['access'],
         'refresh_token': tokens['refresh'],
-        'access': tokens['access'],
-        'refresh': tokens['refresh'],
         'tokens': tokens,
         'message': message
     }
@@ -64,7 +62,7 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save(request)
         return Response(
-            _build_auth_response(user, 'Registration successful.'),
+            build_auth_response(user, 'Registration successful.'),
             status=status.HTTP_201_CREATED
         )
 
@@ -83,7 +81,7 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         return Response(
-            _build_auth_response(user, 'Login successful.'),
+            build_auth_response(user, 'Login successful.'),
             status=status.HTTP_200_OK
         )
 
@@ -94,30 +92,33 @@ class LogoutView(APIView):
     
     POST /api/accounts/logout/
     Blacklists the refresh token to invalidate user session.
+    Accepts refresh_token in request body (field names: 'refresh_token' or 'refresh').
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        try:
-            refresh_token = request.data.get('refresh_token')
-            if refresh_token:
+        refresh_token = (
+            request.data.get('refresh_token') or
+            request.data.get('refresh') or
+            request.data.get('refreshToken')
+        )
+        
+        if refresh_token:
+            try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
                 return Response({
                     'message': 'Successfully logged out.'
                 }, status=status.HTTP_200_OK)
-            else:
+            except TokenError:
                 return Response({
-                    'error': 'Refresh token is required.'
+                    'error': 'Invalid refresh token.'
                 }, status=status.HTTP_400_BAD_REQUEST)
-        except TokenError:
-            return Response({
-                'error': 'Invalid token.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({
-                'error': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'message': 'Successfully logged out.',
+            'warning': 'No refresh token provided. If you have a refresh token, please include it in the request body.'
+        }, status=status.HTTP_200_OK)
 
 
 class ChangePasswordView(APIView):
@@ -131,15 +132,12 @@ class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def put(self, request, *args, **kwargs):
-        """Handle PUT request for password change."""
         return self._change_password(request)
 
     def patch(self, request, *args, **kwargs):
-        """Handle PATCH request for password change."""
         return self._change_password(request)
 
     def _change_password(self, request):
-        """Common logic for password change."""
         serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -182,7 +180,7 @@ class PasswordResetConfirmView(APIView):
     POST /api/accounts/password-reset-confirm/<uidb64>-<token>/
     Resets password using token from email.
     
-    Accepts token in two formats:
+    Accepts token in multiple formats:
     1. URL path: /api/accounts/password-reset-confirm/{uidb64}-{token}/
     2. Request body: {"token_key": "uidb64-token", "new_password1": "...", "new_password2": "..."}
     3. Request body: {"uid": "uidb64", "token": "token", "new_password1": "...", "new_password2": "..."}
@@ -191,7 +189,6 @@ class PasswordResetConfirmView(APIView):
 
     def post(self, request, token_key=None):
         data = request.data.copy()
-        
         if token_key:
             data['token_key'] = token_key
         
@@ -202,25 +199,76 @@ class PasswordResetConfirmView(APIView):
         new_password = serializer.validated_data['new_password1']
         
         try:
-            user_id = force_str(urlsafe_base64_decode(uid))
-            user = User.objects.get(pk=user_id)
-            if default_token_generator.check_token(user, token):
-                user.set_password(new_password)
-                user.save()
+            form = self._create_reset_form(uid, token, new_password, serializer.validated_data['new_password2'])
+            
+            if not form.is_valid():
+                return self._handle_form_errors(form.errors)
+            
+            user = self._get_or_retrieve_user(form, uid)
+            if not user:
                 return Response({
-                    'message': 'Password has been reset successfully.'
-                }, status=status.HTTP_200_OK)
-            return Response({
-                'error': 'Invalid or expired token.'
-            }, status=status.HTTP_400_BAD_REQUEST)
+                    'error': 'Failed to reset password. User not found or token invalid.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            return self._reset_password(form, user, new_password)
+            
         except (TypeError, ValueError, OverflowError) as e:
             return Response({
                 'error': f'Invalid token format: {str(e)}'
             }, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
+        except Exception as e:
+            return Response({
+                'error': f'Error processing request: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    def _create_reset_form(self, uid, token, password1, password2):
+        """Create ResetPasswordKeyForm with validated data."""
+        return ResetPasswordKeyForm(data={
+            'uid': uid,
+            'key': token,
+            'password1': password1,
+            'password2': password2,
+        })
+
+    def _get_or_retrieve_user(self, form, uid):
+        """Get user from form or retrieve manually if form.user is None."""
+        user = getattr(form, 'user', None)
+        if user:
+            return user
+        
+        try:
+            decoded_uid = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=decoded_uid)
+            form.user = user
+            return user
+        except (ValueError, TypeError, OverflowError, User.DoesNotExist):
+            return None
+
+    def _reset_password(self, form, user, new_password):
+        """Reset password using form.save() with fallback to direct set_password."""
+        try:
+            form.save()
+            return Response({
+                'message': 'Password has been reset successfully.'
+            }, status=status.HTTP_200_OK)
+        except Exception:
+            user.set_password(new_password)
+            user.save()
+            return Response({
+                'message': 'Password has been reset successfully.'
+            }, status=status.HTTP_200_OK)
+
+    def _handle_form_errors(self, errors):
+        """Handle form validation errors with appropriate error messages."""
+        if 'key' in errors:
+            return Response({
+                'error': 'Invalid or expired token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if 'uid' in errors:
             return Response({
                 'error': 'Invalid user ID.'
             }, status=status.HTTP_400_BAD_REQUEST)
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PasswordResetTokenValidateView(APIView):
@@ -242,14 +290,24 @@ class PasswordResetTokenValidateView(APIView):
         
         try:
             uid, token = token_key.split('-', 1)
-            user_id = force_str(urlsafe_base64_decode(uid))
-            user = User.objects.get(pk=user_id)
             
-            if default_token_generator.check_token(user, token):
+            form = ResetPasswordKeyForm(data={
+                'uid': uid,
+                'key': token,
+            })
+            
+            if form.is_valid():
                 return Response({
                     'valid': True,
                     'message': 'Token is valid.'
                 }, status=status.HTTP_200_OK)
+            
+            errors = form.errors
+            if 'uid' in errors:
+                return Response({
+                    'valid': False,
+                    'error': 'Invalid user ID.'
+                }, status=status.HTTP_400_BAD_REQUEST)
             return Response({
                 'valid': False,
                 'error': 'Invalid or expired token.'
@@ -258,11 +316,6 @@ class PasswordResetTokenValidateView(APIView):
             return Response({
                 'valid': False,
                 'error': f'Invalid token format: {str(e)}'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({
-                'valid': False,
-                'error': 'Invalid user ID.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
 

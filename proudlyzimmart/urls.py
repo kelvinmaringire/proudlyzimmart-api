@@ -18,6 +18,9 @@ urlpatterns = [
     # Accounts API endpoints
     path("api/accounts/", include("accounts.urls")),
     
+    # Products API endpoints
+    path("api/products/", include("products.urls")),
+    
     # JWT Token endpoints
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     
