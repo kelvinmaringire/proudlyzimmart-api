@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "modelcluster",
     "taggit",
     "django_filters",
+    "import_export",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -106,6 +107,17 @@ AUTHENTICATION_BACKENDS = [
 
 ############### Django REST Framework Settings ################
 
+# Default renderer classes - include BrowsableAPIRenderer in DEBUG mode
+REST_FRAMEWORK_RENDERERS = [
+    'rest_framework.renderers.JSONRenderer',
+]
+
+# Add BrowsableAPIRenderer in DEBUG mode for development
+# Check DEBUG from environment or default to True for development
+_DEBUG_MODE = os.getenv('DEBUG', 'True').lower() == 'true'
+if _DEBUG_MODE:
+    REST_FRAMEWORK_RENDERERS.append('rest_framework.renderers.BrowsableAPIRenderer')
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -116,9 +128,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
-    'DEFAULT_RENDERER_CLASSES': (
-        'rest_framework.renderers.JSONRenderer',
-    ),
+    'DEFAULT_RENDERER_CLASSES': tuple(REST_FRAMEWORK_RENDERERS),
 }
 
 ############### Simple JWT Settings ################

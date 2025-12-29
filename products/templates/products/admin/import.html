@@ -1,0 +1,65 @@
+{% extends "wagtailadmin/base.html" %}
+{% load i18n %}
+
+{% block titletag %}{% trans "Import" %} {{ model_admin.verbose_name_plural }}{% endblock %}
+
+{% block content %}
+    <header class="nice-padding">
+        <div class="row">
+            <div class="left">
+                <div class="col">
+                    <h1 class="icon icon-download">{% trans "Import" %} {{ model_admin.verbose_name_plural }}</h1>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="nice-padding">
+        <div class="help-block help-info">
+            <p>
+                {% trans "Upload a CSV or Excel file to import" %} {{ model_admin.verbose_name_plural|lower }}.
+                {% if model_admin.model == 'Product' %}
+                    <strong>{% trans "Note:" %}</strong> {% trans "Products are identified by SKU. Existing products with matching SKUs will be updated." %}
+                {% endif %}
+            </p>
+        </div>
+
+        <form action="" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            
+            <ul class="fields">
+                <li>
+                    <div class="field">
+                        <label for="id_file_format">{% trans "File Format" %}</label>
+                        <div class="field-content">
+                            <select name="file_format" id="id_file_format" required>
+                                {% for value, label in formats %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </li>
+                
+                <li>
+                    <div class="field">
+                        <label for="id_import_file">{% trans "File" %}</label>
+                        <div class="field-content">
+                            <input type="file" name="import_file" id="id_import_file" accept=".csv,.xlsx,.xls" required>
+                            <p class="help">{% trans "Select a CSV or Excel file to import" %}</p>
+                        </div>
+                    </div>
+                </li>
+            </ul>
+
+            <div class="actions">
+                <button type="submit" class="button button-longrunning" data-clicked-text="{% trans 'Importing...' %}">
+                    <span class="icon icon-spinner"></span>
+                    <em>{% trans "Import" %}</em>
+                </button>
+                <a href="{{ model_admin.url_helper.index_url }}" class="button button-secondary">{% trans "Cancel" %}</a>
+            </div>
+        </form>
+    </div>
+{% endblock %}
+

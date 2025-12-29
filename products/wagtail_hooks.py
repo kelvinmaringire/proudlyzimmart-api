@@ -1,12 +1,21 @@
 """
 Wagtail ModelAdmin configuration for products app.
 Provides Wagtail admin interface for managing products, categories, and related models.
+Includes import/export functionality via django-import-export.
 """
 from wagtail_modeladmin.options import (
     ModelAdmin, ModelAdminGroup, modeladmin_register
 )
+from wagtail_modeladmin.views import IndexView
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.urls import path
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.http import HttpResponse
+from django.core.exceptions import ValidationError
+from import_export.formats.base_formats import CSV, XLSX
+from import_export import fields
 from .models import (
     Category,
     ProductType,
@@ -19,10 +28,150 @@ from .models import (
     ProductBundle,
     BundleItem,
 )
+from .resources import ProductResource, CategoryResource
 
 
-class CategoryAdmin(ModelAdmin):
-    """Wagtail admin interface for Category model."""
+class CategoryImportExportMixin:
+    """Mixin to add import/export functionality to ModelAdmin."""
+    
+    def get_admin_urls_for_registration(self):
+        """Add import/export URLs."""
+        urls = super().get_admin_urls_for_registration()
+        # Store reference to self for closure
+        model_admin_instance = self
+        
+        # Create wrapper functions that capture self in closure
+        def import_view_wrapper(request, *args, **kwargs):
+            return model_admin_instance.import_view(request)
+        
+        def export_view_wrapper(request, *args, **kwargs):
+            return model_admin_instance.export_view(request)
+        
+        # Use simple URL patterns that match the index URL structure
+        # Convert to list, extend, then convert back to tuple
+        urls_list = list(urls) if isinstance(urls, tuple) else list(urls)
+        urls_list.extend([
+            path('import/', import_view_wrapper, name='import'),
+            path('export/', export_view_wrapper, name='export'),
+        ])
+        return tuple(urls_list)
+    
+    def import_view(self, request):
+        """Handle import view."""
+        resource_class = getattr(self, 'import_export_resource', None)
+        if not resource_class:
+            messages.error(request, "Import/Export not configured for this model.")
+            return redirect(self.url_helper.index_url)
+        
+        if request.method == 'POST':
+            file_format = request.POST.get('file_format', 'csv')
+            file = request.FILES.get('import_file')
+            
+            if not file:
+                messages.error(request, "Please select a file to import.")
+                return render(request, 'products/admin/import.html', {
+                    'model_admin': self,
+                    'formats': [('csv', 'CSV'), ('xlsx', 'Excel')],
+                })
+            
+            # Get format class
+            format_map = {
+                'csv': CSV(),
+                'xlsx': XLSX(),
+            }
+            format_instance = format_map.get(file_format)
+            
+            if not format_instance:
+                messages.error(request, f"Unsupported file format: {file_format}")
+                return render(request, 'products/admin/import.html', {
+                    'model_admin': self,
+                    'formats': [('csv', 'CSV'), ('xlsx', 'Excel')],
+                })
+            
+            try:
+                # Read file - django-import-export handles encoding automatically
+                file.seek(0)  # Reset file pointer in case it was read before
+                dataset = format_instance.create_dataset(file)
+                
+                # Import data
+                resource = resource_class()
+                result = resource.import_data(dataset, dry_run=False, raise_errors=False)
+                
+                # Report results
+                if result.has_errors():
+                    error_messages = []
+                    for error in result.errors:
+                        error_messages.append(f"Row {error.row}: {error.error}")
+                    messages.error(request, f"Import completed with errors:\n" + "\n".join(error_messages[:10]))
+                else:
+                    messages.success(
+                        request,
+                        f"Successfully imported {result.totals['new']} new, "
+                        f"{result.totals['update']} updated, "
+                        f"{result.totals['skip']} skipped records."
+                    )
+                
+            except Exception as e:
+                messages.error(request, f"Error importing file: {str(e)}")
+            
+            return redirect(self.url_helper.index_url)
+        
+        return render(request, 'products/admin/import.html', {
+            'model_admin': self,
+            'formats': [('csv', 'CSV'), ('xlsx', 'Excel')],
+        })
+    
+    def export_view(self, request):
+        """Handle export view."""
+        resource_class = getattr(self, 'import_export_resource', None)
+        if not resource_class:
+            messages.error(request, "Import/Export not configured for this model.")
+            return redirect(self.url_helper.index_url)
+        
+        file_format = request.GET.get('format', 'csv')
+        
+        # Get format class
+        format_map = {
+            'csv': CSV(),
+            'xlsx': XLSX(),
+        }
+        format_instance = format_map.get(file_format, CSV())
+        
+        # Export data
+        resource = resource_class()
+        queryset = self.model.objects.all()
+        dataset = resource.export(queryset)
+        
+        # Create response
+        response = HttpResponse(
+            format_instance.export_data(dataset),
+            content_type=format_instance.get_content_type()
+        )
+        response['Content-Disposition'] = f'attachment; filename="{self.model.__name__.lower()}_export.{format_instance.get_extension()}"'
+        
+        return response
+
+
+class CategoryIndexView(IndexView):
+    """Custom index view with import/export buttons."""
+    
+    def get_template_names(self):
+        """Override to use custom template."""
+        return ['wagtail_modeladmin/products/categoryadmin/index.html', 'modeladmin/index.html']
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['show_import_export'] = True
+        # Construct URLs manually
+        base_url = self.model_admin.url_helper.index_url
+        context['import_url'] = base_url.rstrip('/') + '/import/'
+        context['export_csv_url'] = base_url.rstrip('/') + '/export/?format=csv'
+        context['export_xlsx_url'] = base_url.rstrip('/') + '/export/?format=xlsx'
+        return context
+
+
+class CategoryAdmin(CategoryImportExportMixin, ModelAdmin):
+    """Wagtail admin interface for Category model with import/export."""
     model = Category
     menu_label = "Categories"
     menu_icon = "folder"
@@ -32,6 +181,8 @@ class CategoryAdmin(ModelAdmin):
     list_filter = ("is_active", "parent", "created_at")
     search_fields = ("name", "slug", "description")
     ordering = ("order", "name")
+    index_view_class = CategoryIndexView
+    import_export_resource = CategoryResource
     
     def product_count(self, obj):
         """Display count of products in category."""
@@ -56,8 +207,26 @@ class ProductTypeAdmin(ModelAdmin):
     product_count.short_description = "Products"
 
 
-class ProductAdmin(ModelAdmin):
-    """Wagtail admin interface for Product model."""
+class ProductIndexView(IndexView):
+    """Custom index view with import/export buttons."""
+    
+    def get_template_names(self):
+        """Override to use custom template."""
+        return ['wagtail_modeladmin/products/productadmin/index.html', 'modeladmin/index.html']
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['show_import_export'] = True
+        # Construct URLs manually
+        base_url = self.model_admin.url_helper.index_url
+        context['import_url'] = base_url.rstrip('/') + '/import/'
+        context['export_csv_url'] = base_url.rstrip('/') + '/export/?format=csv'
+        context['export_xlsx_url'] = base_url.rstrip('/') + '/export/?format=xlsx'
+        return context
+
+
+class ProductAdmin(CategoryImportExportMixin, ModelAdmin):
+    """Wagtail admin interface for Product model with import/export."""
     model = Product
     menu_label = "Products"
     menu_icon = "doc-full"
@@ -74,6 +243,8 @@ class ProductAdmin(ModelAdmin):
     )
     search_fields = ("name", "sku", "brand", "description", "tags")
     ordering = ("-created_at",)
+    index_view_class = ProductIndexView
+    import_export_resource = ProductResource
     
     def price_display(self, obj):
         """Display price information."""

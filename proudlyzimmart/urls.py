@@ -8,9 +8,15 @@ from wagtail import urls as wagtail_urls
 from wagtail.documents import urls as wagtaildocs_urls
 
 from search import views as search_views
+from products import admin_views as product_admin_views
 
 urlpatterns = [
     path("django-admin/", admin.site.urls),
+    # Product import/export URLs (must be before wagtailadmin_urls)
+    path("admin/products/product/import/", product_admin_views.product_import_view, name="product_import"),
+    path("admin/products/product/export/", product_admin_views.product_export_view, name="product_export"),
+    path("admin/products/category/import/", product_admin_views.category_import_view, name="category_import"),
+    path("admin/products/category/export/", product_admin_views.category_export_view, name="category_export"),
     path("admin/", include(wagtailadmin_urls)),
     path("documents/", include(wagtaildocs_urls)),
     path("search/", search_views.search, name="search"),

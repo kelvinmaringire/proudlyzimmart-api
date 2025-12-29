@@ -1,14 +1,14 @@
 """
 API views for products app.
 Handles product listing, detail, creation, updates, search, filtering, and reviews.
+All views use DRF Generic Views instead of ViewSets.
 """
-from rest_framework import generics, viewsets, status, permissions, filters
-from rest_framework.decorators import action
+from rest_framework import generics, status, permissions, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg, Count
-from django.utils import timezone
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
 
 from .models import (
     Category,
@@ -40,6 +40,8 @@ from .serializers import (
 )
 
 
+# ==================== Category Views ====================
+
 class CategoryListView(generics.ListAPIView):
     """
     List all active categories.
@@ -65,6 +67,8 @@ class CategoryDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
 
 
+# ==================== Product Type Views ====================
+
 class ProductTypeListView(generics.ListAPIView):
     """
     List all active product types.
@@ -77,16 +81,18 @@ class ProductTypeListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
 
 
-class ProductViewSet(viewsets.ModelViewSet):
+# ==================== Product Views ====================
+
+class ProductListCreateView(generics.ListCreateAPIView):
     """
-    ViewSet for Product model.
+    List all products or create a new product.
     
-    Provides CRUD operations and additional actions for products.
+    GET /api/products/products/ - List products with filtering
+    POST /api/products/products/ - Create product (admin only)
     """
     queryset = Product.objects.select_related('category', 'product_type').prefetch_related(
         'images', 'variations', 'reviews'
     )
-    permission_classes = [permissions.AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'brand', 'sku', 'tags']
     ordering_fields = ['created_at', 'price_usd', 'average_rating', 'name']
@@ -104,12 +110,10 @@ class ProductViewSet(viewsets.ModelViewSet):
     }
 
     def get_serializer_class(self):
-        """Return appropriate serializer based on action."""
-        if self.action == 'list':
-            return ProductListSerializer
-        elif self.action in ['create', 'update', 'partial_update']:
+        """Return appropriate serializer based on method."""
+        if self.request.method == 'POST':
             return ProductCreateUpdateSerializer
-        return ProductDetailSerializer
+        return ProductListSerializer
 
     def get_queryset(self):
         """Filter queryset based on query parameters."""
@@ -156,54 +160,130 @@ class ProductViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_permissions(self):
-        """Set permissions based on action."""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Set permissions based on method."""
+        if self.request.method == 'POST':
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
         return [permissions.AllowAny()]
 
-    @action(detail=True, methods=['get'], url_path='variations')
-    def variations(self, request, pk=None):
-        """Get product variations."""
-        product = self.get_object()
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a product.
+    
+    GET /api/products/products/<id>/ - Get product details
+    PUT /api/products/products/<id>/ - Update product (admin only)
+    PATCH /api/products/products/<id>/ - Partial update (admin only)
+    DELETE /api/products/products/<id>/ - Delete product (admin only)
+    """
+    queryset = Product.objects.select_related('category', 'product_type').prefetch_related(
+        'images', 'videos', 'variations', 'reviews', 'related_products'
+    )
+    permission_classes = [permissions.AllowAny]
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on method."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return ProductCreateUpdateSerializer
+        return ProductDetailSerializer
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ProductVariationsView(APIView):
+    """
+    Get product variations.
+    
+    GET /api/products/products/<id>/variations/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
         variations = product.variations.filter(is_active=True)
         serializer = ProductVariationSerializer(variations, many=True)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get'], url_path='images')
-    def images(self, request, pk=None):
-        """Get product images."""
-        product = self.get_object()
+
+class ProductImagesView(APIView):
+    """
+    Get product images.
+    
+    GET /api/products/products/<id>/images/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
         images = product.images.all()
         serializer = ProductImageSerializer(images, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get'], url_path='videos')
-    def videos(self, request, pk=None):
-        """Get product videos."""
-        product = self.get_object()
+
+class ProductVideosView(APIView):
+    """
+    Get product videos.
+    
+    GET /api/products/products/<id>/videos/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
         videos = product.videos.filter(is_active=True)
         serializer = ProductVideoSerializer(videos, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get'], url_path='reviews')
-    def reviews(self, request, pk=None):
-        """Get product reviews."""
-        product = self.get_object()
-        reviews = product.reviews.filter(is_approved=True)
-        
-        # Pagination
-        page = self.paginate_queryset(reviews)
-        if page is not None:
-            serializer = ReviewSerializer(page, many=True, context={'request': request})
-            return self.get_paginated_response(serializer.data)
-        
-        serializer = ReviewSerializer(reviews, many=True, context={'request': request})
-        return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def add_review(self, request, pk=None):
-        """Add a review to a product."""
-        product = self.get_object()
+class ProductReviewsView(generics.ListAPIView):
+    """
+    Get product reviews.
+    
+    GET /api/products/products/<id>/reviews/
+    """
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        product = get_object_or_404(Product, pk=self.kwargs['pk'])
+        return product.reviews.filter(is_approved=True)
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ProductAddReviewView(generics.CreateAPIView):
+    """
+    Add a review to a product.
+    
+    POST /api/products/products/<id>/add_review/
+    """
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_product(self):
+        return get_object_or_404(Product, pk=self.kwargs['pk'])
+
+    def create(self, request, *args, **kwargs):
+        product = self.get_product()
         
         # Check if user already reviewed this product
         existing_review = Review.objects.filter(product=product, user=request.user).first()
@@ -213,160 +293,64 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        serializer = ReviewSerializer(
-            data=request.data,
-            context={'request': request}
-        )
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(product=product)
+        serializer.save(product=product, user=request.user)
         
         # Update product rating
         product.update_rating()
         
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['get'], url_path='related')
-    def related_products(self, request, pk=None):
-        """Get related products."""
-        product = self.get_object()
+
+class ProductRelatedProductsView(APIView):
+    """
+    Get related products.
+    
+    GET /api/products/products/<id>/related/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
         related = product.related_products.select_related('related_product')[:10]
         serializer = RelatedProductSerializer(related, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='featured')
-    def featured(self, request):
-        """Get featured products."""
-        featured_products = self.get_queryset().filter(is_featured=True)[:20]
-        serializer = ProductListSerializer(featured_products, many=True, context={'request': request})
+
+class ProductFeaturedView(APIView):
+    """
+    Get featured products.
+    
+    GET /api/products/products/featured/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        products = Product.objects.filter(
+            is_featured=True,
+            is_active=True
+        ).select_related('category', 'product_type').prefetch_related('images')[:20]
+        serializer = ProductListSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='on-sale')
-    def on_sale(self, request):
-        """Get products on sale."""
-        queryset = self.get_queryset()
-        on_sale_products = [
-            p for p in queryset if p.is_on_sale()
-        ][:20]
+
+class ProductOnSaleView(APIView):
+    """
+    Get products on sale.
+    
+    GET /api/products/products/on-sale/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).select_related(
+            'category', 'product_type'
+        ).prefetch_related('images')
+        
+        on_sale_products = [p for p in products if p.is_on_sale()][:20]
         serializer = ProductListSerializer(on_sale_products, many=True, context={'request': request})
         return Response(serializer.data)
-
-    @action(detail=False, methods=['get'], url_path='search')
-    def search(self, request):
-        """Advanced search with auto-suggest."""
-        query = request.query_params.get('q', '')
-        if not query:
-            return Response({'results': []})
-        
-        # Search in multiple fields
-        products = self.get_queryset().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(brand__icontains=query) |
-            Q(sku__icontains=query) |
-            Q(tags__icontains=query)
-        )[:10]
-        
-        serializer = ProductListSerializer(products, many=True, context={'request': request})
-        return Response({
-            'query': query,
-            'results': serializer.data,
-            'count': len(serializer.data)
-        })
-
-
-class ProductVariationViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for ProductVariation model.
-    
-    GET /api/products/variations/ - List all variations
-    POST /api/products/variations/ - Create variation (admin only)
-    """
-    queryset = ProductVariation.objects.select_related('product')
-    serializer_class = ProductVariationSerializer
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['product', 'is_active']
-
-
-class ProductImageViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for ProductImage model.
-    
-    GET /api/products/images/ - List all images
-    POST /api/products/images/ - Upload image (admin only)
-    """
-    queryset = ProductImage.objects.select_related('product')
-    serializer_class = ProductImageSerializer
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['product', 'is_primary']
-
-    def get_serializer_context(self):
-        """Add request to context for image URLs."""
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
-
-
-class ReviewViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for Review model.
-    
-    GET /api/products/reviews/ - List all approved reviews
-    POST /api/products/reviews/ - Create review (authenticated users)
-    """
-    queryset = Review.objects.select_related('product', 'user').filter(is_approved=True)
-    serializer_class = ReviewSerializer
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    ordering_fields = ['created_at', 'rating', 'helpful_count']
-    ordering = ['-created_at']
-    filterset_fields = ['product', 'rating', 'is_verified_purchase']
-
-    def get_permissions(self):
-        """Set permissions based on action."""
-        if self.action in ['create']:
-            return [permissions.IsAuthenticated()]
-        elif self.action in ['update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
-        return [permissions.AllowAny()]
-
-    def perform_create(self, serializer):
-        """Create review and update product rating."""
-        review = serializer.save()
-        review.product.update_rating()
-
-    def perform_update(self, serializer):
-        """Update review and product rating."""
-        review = serializer.save()
-        review.product.update_rating()
-
-    def perform_destroy(self, instance):
-        """Delete review and update product rating."""
-        product = instance.product
-        instance.delete()
-        product.update_rating()
-
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def mark_helpful(self, request, pk=None):
-        """Mark a review as helpful."""
-        review = self.get_object()
-        review.helpful_count += 1
-        review.save(update_fields=['helpful_count'])
-        return Response({'message': 'Review marked as helpful.'})
-
-
-class RelatedProductViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for RelatedProduct model.
-    
-    GET /api/products/related/ - List all related products
-    POST /api/products/related/ - Create related product (admin only)
-    """
-    queryset = RelatedProduct.objects.select_related('product', 'related_product')
-    serializer_class = RelatedProductSerializer
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['product', 'related_product']
 
 
 class ProductSearchView(APIView):
@@ -451,32 +435,50 @@ class ProductSearchView(APIView):
         })
 
 
-class ProductVideoViewSet(viewsets.ModelViewSet):
+# ==================== Product Variation Views ====================
+
+class ProductVariationListCreateView(generics.ListCreateAPIView):
     """
-    ViewSet for ProductVideo model.
+    List all variations or create a new variation.
     
-    GET /api/products/videos/ - List all videos
-    POST /api/products/videos/ - Upload video (admin only)
+    GET /api/products/variations/ - List variations (admin only)
+    POST /api/products/variations/ - Create variation (admin only)
     """
-    queryset = ProductVideo.objects.select_related('product').filter(is_active=True)
-    serializer_class = ProductVideoSerializer
+    queryset = ProductVariation.objects.select_related('product')
+    serializer_class = ProductVariationSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['product', 'video_type', 'is_primary']
+    filterset_fields = ['product', 'is_active']
 
-    def get_queryset(self):
-        """Filter queryset based on permissions."""
-        queryset = super().get_queryset()
-        # Allow non-admin users to see active videos
-        if not self.request.user.is_staff:
-            queryset = queryset.filter(is_active=True)
-        return queryset
 
-    def get_permissions(self):
-        """Set permissions based on action."""
-        if self.action in ['list', 'retrieve']:
-            return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+class ProductVariationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a variation.
+    
+    GET /api/products/variations/<id>/ - Get variation (admin only)
+    PUT /api/products/variations/<id>/ - Update variation (admin only)
+    PATCH /api/products/variations/<id>/ - Partial update (admin only)
+    DELETE /api/products/variations/<id>/ - Delete variation (admin only)
+    """
+    queryset = ProductVariation.objects.select_related('product')
+    serializer_class = ProductVariationSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+
+
+# ==================== Product Image Views ====================
+
+class ProductImageListCreateView(generics.ListCreateAPIView):
+    """
+    List all images or upload a new image.
+    
+    GET /api/products/images/ - List images (admin only)
+    POST /api/products/images/ - Upload image (admin only)
+    """
+    queryset = ProductImage.objects.select_related('product')
+    serializer_class = ProductImageSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['product', 'is_primary']
 
     def get_serializer_context(self):
         """Add request to context for image URLs."""
@@ -485,15 +487,222 @@ class ProductVideoViewSet(viewsets.ModelViewSet):
         return context
 
 
-class ProductBundleViewSet(viewsets.ModelViewSet):
+class ProductImageDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    ViewSet for ProductBundle model.
+    Retrieve, update or delete an image.
     
-    GET /api/products/bundles/ - List all bundles
+    GET /api/products/images/<id>/ - Get image (admin only)
+    PUT /api/products/images/<id>/ - Update image (admin only)
+    PATCH /api/products/images/<id>/ - Partial update (admin only)
+    DELETE /api/products/images/<id>/ - Delete image (admin only)
+    """
+    queryset = ProductImage.objects.select_related('product')
+    serializer_class = ProductImageSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+
+    def get_serializer_context(self):
+        """Add request to context for image URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+# ==================== Product Video Views ====================
+
+class ProductVideoListCreateView(generics.ListCreateAPIView):
+    """
+    List all videos or create a new video.
+    
+    GET /api/products/videos/ - List videos
+    POST /api/products/videos/ - Create video (admin only)
+    """
+    queryset = ProductVideo.objects.select_related('product').filter(is_active=True)
+    serializer_class = ProductVideoSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['product', 'video_type', 'is_primary']
+
+    def get_queryset(self):
+        """Filter queryset based on permissions."""
+        queryset = super().get_queryset()
+        if not self.request.user.is_staff:
+            queryset = queryset.filter(is_active=True)
+        return queryset
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def get_serializer_context(self):
+        """Add request to context for image URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ProductVideoDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a video.
+    
+    GET /api/products/videos/<id>/ - Get video
+    PUT /api/products/videos/<id>/ - Update video (admin only)
+    PATCH /api/products/videos/<id>/ - Partial update (admin only)
+    DELETE /api/products/videos/<id>/ - Delete video (admin only)
+    """
+    queryset = ProductVideo.objects.select_related('product')
+    serializer_class = ProductVideoSerializer
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def get_serializer_context(self):
+        """Add request to context for image URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+# ==================== Review Views ====================
+
+class ReviewListCreateView(generics.ListCreateAPIView):
+    """
+    List all reviews or create a new review.
+    
+    GET /api/products/reviews/ - List approved reviews
+    POST /api/products/reviews/ - Create review (authenticated users)
+    """
+    queryset = Review.objects.select_related('product', 'user').filter(is_approved=True)
+    serializer_class = ReviewSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    ordering_fields = ['created_at', 'rating', 'helpful_count']
+    ordering = ['-created_at']
+    filterset_fields = ['product', 'rating', 'is_verified_purchase']
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
+
+    def perform_create(self, serializer):
+        """Create review and update product rating."""
+        review = serializer.save(user=self.request.user)
+        review.product.update_rating()
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a review.
+    
+    GET /api/products/reviews/<id>/ - Get review
+    PUT /api/products/reviews/<id>/ - Update review (admin only)
+    PATCH /api/products/reviews/<id>/ - Partial update (admin only)
+    DELETE /api/products/reviews/<id>/ - Delete review (admin only)
+    """
+    queryset = Review.objects.select_related('product', 'user')
+    serializer_class = ReviewSerializer
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def perform_update(self, serializer):
+        """Update review and product rating."""
+        review = serializer.save()
+        review.product.update_rating()
+
+    def perform_destroy(self, instance):
+        """Delete review and update product rating."""
+        product = instance.product
+        instance.delete()
+        product.update_rating()
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ReviewMarkHelpfulView(APIView):
+    """
+    Mark a review as helpful.
+    
+    POST /api/products/reviews/<id>/mark_helpful/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        review = get_object_or_404(Review, pk=pk)
+        review.helpful_count += 1
+        review.save(update_fields=['helpful_count'])
+        return Response({'message': 'Review marked as helpful.'})
+
+
+# ==================== Related Product Views ====================
+
+class RelatedProductListCreateView(generics.ListCreateAPIView):
+    """
+    List all related products or create a new related product.
+    
+    GET /api/products/related/ - List related products (admin only)
+    POST /api/products/related/ - Create related product (admin only)
+    """
+    queryset = RelatedProduct.objects.select_related('product', 'related_product')
+    serializer_class = RelatedProductSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['product', 'related_product']
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class RelatedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a related product.
+    
+    GET /api/products/related/<id>/ - Get related product (admin only)
+    PUT /api/products/related/<id>/ - Update related product (admin only)
+    PATCH /api/products/related/<id>/ - Partial update (admin only)
+    DELETE /api/products/related/<id>/ - Delete related product (admin only)
+    """
+    queryset = RelatedProduct.objects.select_related('product', 'related_product')
+    serializer_class = RelatedProductSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+# ==================== Product Bundle Views ====================
+
+class ProductBundleListCreateView(generics.ListCreateAPIView):
+    """
+    List all bundles or create a new bundle.
+    
+    GET /api/products/bundles/ - List bundles
     POST /api/products/bundles/ - Create bundle (admin only)
     """
     queryset = ProductBundle.objects.prefetch_related('bundle_items__product').filter(is_active=True)
-    permission_classes = [permissions.AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['created_at', 'bundle_price_usd', 'discount_percentage', 'name']
@@ -506,12 +715,10 @@ class ProductBundleViewSet(viewsets.ModelViewSet):
     }
 
     def get_serializer_class(self):
-        """Return appropriate serializer based on action."""
-        if self.action == 'list':
-            return ProductBundleListSerializer
-        elif self.action in ['create', 'update', 'partial_update']:
+        """Return appropriate serializer based on method."""
+        if self.request.method == 'POST':
             return ProductBundleCreateUpdateSerializer
-        return ProductBundleDetailSerializer
+        return ProductBundleListSerializer
 
     def get_queryset(self):
         """Filter queryset based on query parameters."""
@@ -529,8 +736,8 @@ class ProductBundleViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_permissions(self):
-        """Set permissions based on action."""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Set permissions based on method."""
+        if self.request.method == 'POST':
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
         return [permissions.AllowAny()]
 
@@ -540,17 +747,65 @@ class ProductBundleViewSet(viewsets.ModelViewSet):
         context['request'] = self.request
         return context
 
-    @action(detail=True, methods=['get'], url_path='items')
-    def items(self, request, pk=None):
-        """Get bundle items."""
-        bundle = self.get_object()
+
+class ProductBundleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a bundle.
+    
+    GET /api/products/bundles/<id>/ - Get bundle details
+    PUT /api/products/bundles/<id>/ - Update bundle (admin only)
+    PATCH /api/products/bundles/<id>/ - Partial update (admin only)
+    DELETE /api/products/bundles/<id>/ - Delete bundle (admin only)
+    """
+    queryset = ProductBundle.objects.prefetch_related('bundle_items__product')
+    permission_classes = [permissions.AllowAny]
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on method."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return ProductBundleCreateUpdateSerializer
+        return ProductBundleDetailSerializer
+
+    def get_permissions(self):
+        """Set permissions based on method."""
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def get_serializer_context(self):
+        """Add request to context for image URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ProductBundleItemsView(APIView):
+    """
+    Get bundle items.
+    
+    GET /api/products/bundles/<id>/items/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        bundle = get_object_or_404(ProductBundle, pk=pk)
         items = bundle.bundle_items.select_related('product').prefetch_related('product__images')
         serializer = BundleItemSerializer(items, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='featured')
-    def featured(self, request):
-        """Get featured bundles."""
-        featured_bundles = self.get_queryset().filter(is_featured=True)[:20]
-        serializer = ProductBundleListSerializer(featured_bundles, many=True, context={'request': request})
+
+class ProductBundleFeaturedView(APIView):
+    """
+    Get featured bundles.
+    
+    GET /api/products/bundles/featured/
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        bundles = ProductBundle.objects.filter(
+            is_featured=True,
+            is_active=True
+        ).prefetch_related('bundle_items__product')[:20]
+        serializer = ProductBundleListSerializer(bundles, many=True, context={'request': request})
         return Response(serializer.data)
