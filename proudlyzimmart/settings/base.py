@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "search",
     "accounts",
     "products",
+    "cart",
     
     # CORS Headers
     "corsheaders",

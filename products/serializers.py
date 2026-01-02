@@ -72,11 +72,11 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         """Get full image URL."""
-        if obj.image:
+        if obj.image and obj.image.file:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
+                return request.build_absolute_uri(obj.image.file.url)
+            return obj.image.file.url
         return None
 
 
@@ -149,11 +149,11 @@ class RelatedProductSerializer(serializers.ModelSerializer):
     def _get_primary_image(self, product):
         """Get primary image URL."""
         primary_image = product.images.filter(is_primary=True).first()
-        if primary_image:
+        if primary_image and primary_image.image and primary_image.image.file:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(primary_image.image.url)
-            return primary_image.image.url
+                return request.build_absolute_uri(primary_image.image.file.url)
+            return primary_image.image.file.url
         return None
 
 
@@ -189,19 +189,19 @@ class ProductListSerializer(serializers.ModelSerializer):
     def get_primary_image(self, obj):
         """Get primary image URL."""
         primary_image = obj.images.filter(is_primary=True).first()
-        if primary_image:
+        if primary_image and primary_image.image and primary_image.image.file:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(primary_image.image.url)
-            return primary_image.image.url
+                return request.build_absolute_uri(primary_image.image.file.url)
+            return primary_image.image.file.url
         
         # Fallback to first image if no primary
         first_image = obj.images.first()
-        if first_image:
+        if first_image and first_image.image and first_image.image.file:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(first_image.image.url)
-            return first_image.image.url
+                return request.build_absolute_uri(first_image.image.file.url)
+            return first_image.image.file.url
         return None
 
     def get_current_price_usd(self, obj):
@@ -469,11 +469,11 @@ class BundleItemSerializer(serializers.ModelSerializer):
     def _get_primary_image(self, product):
         """Get primary image URL."""
         primary_image = product.images.filter(is_primary=True).first()
-        if primary_image:
+        if primary_image and primary_image.image and primary_image.image.file:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(primary_image.image.url)
-            return primary_image.image.url
+                return request.build_absolute_uri(primary_image.image.file.url)
+            return primary_image.image.file.url
         return None
 
 

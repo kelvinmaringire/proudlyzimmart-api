@@ -287,10 +287,10 @@ class ProductImageAdmin(ModelAdmin):
     
     def image_preview(self, obj):
         """Display image preview."""
-        if obj.image:
+        if obj.image and obj.image.file:
             return format_html(
                 '<img src="{}" width="100" height="100" style="object-fit: cover;" />',
-                obj.image.url
+                obj.image.file.url
             )
         return "No image"
     image_preview.short_description = "Preview"

@@ -7,6 +7,12 @@ from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.text import slugify
 from django.urls import reverse
+from modelcluster.models import ClusterableModel
+from modelcluster.fields import ParentalKey
+from wagtail.admin.panels import (
+    FieldPanel, MultiFieldPanel, FieldRowPanel, InlinePanel
+)
+from wagtail.images.models import Image
 
 User = get_user_model()
 
@@ -67,7 +73,7 @@ class ProductType(models.Model):
         return self.name
 
 
-class Product(models.Model):
+class Product(ClusterableModel):
     """Main product model for ProudlyZimmart marketplace."""
     # Basic Information
     name = models.CharField(max_length=255)
@@ -284,6 +290,85 @@ class Product(models.Model):
             self.review_count = 0
         self.save(update_fields=['average_rating', 'review_count'])
 
+    # Wagtail Panels Configuration
+    panels = [
+        MultiFieldPanel([
+            FieldPanel('name'),
+            FieldPanel('slug'),
+            FieldRowPanel([
+                FieldPanel('sku'),
+                FieldPanel('category'),
+            ]),
+        ], heading="Basic Information"),
+        
+        MultiFieldPanel([
+            FieldPanel('short_description'),
+            FieldPanel('description'),
+        ], heading="Description"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('brand'),
+                FieldPanel('manufacturer'),
+            ]),
+            FieldPanel('product_type'),
+            FieldPanel('is_proudlyzimmart_brand'),
+        ], heading="Branding & Categorization"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('price_usd'),
+                FieldPanel('sale_price_usd'),
+            ]),
+            FieldRowPanel([
+                FieldPanel('price_zwl'),
+                FieldPanel('sale_price_zwl'),
+            ]),
+            FieldRowPanel([
+                FieldPanel('price_zar'),
+                FieldPanel('sale_price_zar'),
+            ]),
+        ], heading="Pricing"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('stock_quantity'),
+                FieldPanel('low_stock_threshold'),
+            ]),
+            FieldRowPanel([
+                FieldPanel('track_stock'),
+                FieldPanel('in_stock'),
+            ]),
+        ], heading="Stock Management"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('weight'),
+                FieldPanel('dimensions'),
+            ]),
+        ], heading="Physical Attributes"),
+        
+        MultiFieldPanel([
+            FieldPanel('is_active'),
+            FieldPanel('is_featured'),
+            FieldPanel('is_standard'),
+        ], heading="Product Status"),
+        
+        MultiFieldPanel([
+            FieldPanel('meta_title'),
+            FieldPanel('meta_description'),
+            FieldPanel('tags'),
+        ], heading="SEO & Metadata"),
+        
+        MultiFieldPanel([
+            InlinePanel('images', label=""),
+        ], heading="Product Images"),
+        
+        MultiFieldPanel([
+            InlinePanel('videos', label=""),
+        ], heading="Product Videos"),
+    ]
+
 
 class ProductVariation(models.Model):
     """Product variations (sizes, colors, models, etc.)."""
@@ -347,12 +432,17 @@ class ProductVariation(models.Model):
 
 class ProductImage(models.Model):
     """Multiple images per product with zoom support."""
-    product = models.ForeignKey(
+    product = ParentalKey(
         Product,
         on_delete=models.CASCADE,
         related_name='images'
     )
-    image = models.ImageField(upload_to='products/')
+    image = models.ForeignKey(
+        Image,
+        on_delete=models.CASCADE,
+        related_name='product_images',
+        help_text="Select an image from the Wagtail image library"
+    )
     alt_text = models.CharField(max_length=255, blank=True)
     is_primary = models.BooleanField(
         default=False,
@@ -375,6 +465,15 @@ class ProductImage(models.Model):
                 is_primary=True
             ).exclude(pk=self.pk).update(is_primary=False)
         super().save(*args, **kwargs)
+
+    panels = [
+        FieldPanel('image'),
+        FieldRowPanel([
+            FieldPanel('alt_text'),
+            FieldPanel('is_primary'),
+        ]),
+        FieldPanel('order'),
+    ]
 
 
 class Review(models.Model):
@@ -448,7 +547,7 @@ class RelatedProduct(models.Model):
 
 class ProductVideo(models.Model):
     """Product videos for showcasing products (primarily YouTube URLs)."""
-    product = models.ForeignKey(
+    product = ParentalKey(
         Product,
         on_delete=models.CASCADE,
         related_name='videos'
@@ -552,6 +651,22 @@ class ProductVideo(models.Model):
             # hqdefault = 480x360, maxresdefault = 1280x720 (if available)
             return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
         return None
+
+    panels = [
+        FieldPanel('video_url'),
+        FieldRowPanel([
+            FieldPanel('video_type'),
+            FieldPanel('is_primary'),
+        ]),
+        FieldPanel('thumbnail'),
+        FieldPanel('title'),
+        FieldPanel('description'),
+        FieldRowPanel([
+            FieldPanel('duration'),
+            FieldPanel('is_active'),
+        ]),
+        FieldPanel('order'),
+    ]
 
 
 class ProductBundle(models.Model):
