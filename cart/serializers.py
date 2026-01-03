@@ -20,6 +20,36 @@ class CartItemSerializer(serializers.Serializer):
     price_zar = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
 
 
+class CartItemDetailSerializer(serializers.Serializer):
+    """Serializer for enriched cart item details (for drawer display)."""
+    product_id = serializers.IntegerField()
+    variation_id = serializers.IntegerField(required=False, allow_null=True)
+    quantity = serializers.IntegerField()
+    
+    # Product details
+    product_name = serializers.CharField()
+    product_slug = serializers.CharField()
+    product_sku = serializers.CharField()
+    product_image_url = serializers.CharField(required=False, allow_null=True)
+    
+    # Variation details
+    variation_name = serializers.CharField(required=False, allow_null=True)
+    variation_value = serializers.CharField(required=False, allow_null=True)
+    
+    # Pricing
+    price_usd = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    price_zwl = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    price_zar = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    current_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Subtotal
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Stock
+    available_stock = serializers.IntegerField()
+    in_stock = serializers.BooleanField()
+
+
 class CartValidationSerializer(serializers.Serializer):
     """Serializer for cart validation request."""
     items = CartItemSerializer(many=True)
@@ -177,4 +207,3 @@ class PromoCodeSerializer(serializers.ModelSerializer):
             'minimum_order_amount_zar', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'used_count', 'created_at', 'updated_at']
-

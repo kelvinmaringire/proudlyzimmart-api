@@ -14,6 +14,7 @@ from products.models import Product, ProductVariation
 from .models import PromoCode, Order, OrderItem
 from .serializers import (
     CartValidationSerializer,
+    CartItemDetailSerializer,
     StockCheckSerializer,
     PromoCodeValidationSerializer,
     CheckoutSerializer,
@@ -651,6 +652,162 @@ class CheckoutView(APIView):
         # Serialize and return order
         order_serializer = OrderSerializer(order)
         return Response(order_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class CartItemsDetailView(APIView):
+    """
+    Get enriched cart items details for drawer display.
+    
+    POST /api/cart/items-detail/
+    Takes cart items from localStorage and returns enriched product data
+    with images, names, prices, etc. for display in cart drawer.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = CartValidationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        items = serializer.validated_data['items']
+        currency = serializer.validated_data.get('currency', 'USD')
+        
+        enriched_items = []
+        errors = []
+        
+        for item_data in items:
+            product_id = item_data['product_id']
+            variation_id = item_data.get('variation_id')
+            quantity = item_data['quantity']
+            
+            try:
+                product = Product.objects.select_related('category', 'product_type').prefetch_related(
+                    'images'
+                ).get(pk=product_id)
+            except Product.DoesNotExist:
+                errors.append({
+                    'product_id': product_id,
+                    'error': 'Product does not exist'
+                })
+                continue
+            
+            if not product.is_active:
+                errors.append({
+                    'product_id': product_id,
+                    'error': 'Product is not active'
+                })
+                continue
+            
+            # Get variation if provided
+            variation = None
+            variation_name = None
+            variation_value = None
+            if variation_id:
+                try:
+                    variation = ProductVariation.objects.get(
+                        pk=variation_id,
+                        product=product
+                    )
+                    if not variation.is_active:
+                        errors.append({
+                            'product_id': product_id,
+                            'variation_id': variation_id,
+                            'error': 'Product variation is not active'
+                        })
+                        continue
+                    variation_name = variation.name
+                    variation_value = variation.value
+                except ProductVariation.DoesNotExist:
+                    errors.append({
+                        'product_id': product_id,
+                        'variation_id': variation_id,
+                        'error': 'Product variation does not exist'
+                    })
+                    continue
+            
+            # Get product image
+            primary_image = product.images.filter(is_primary=True).first()
+            if not primary_image:
+                primary_image = product.images.first()
+            
+            image_url = None
+            if primary_image and primary_image.image and primary_image.image.file:
+                request_obj = request
+                image_url = request_obj.build_absolute_uri(primary_image.image.file.url)
+            
+            # Get prices
+            price_usd = product.get_current_price('USD')
+            price_zwl = product.get_current_price('ZWL')
+            price_zar = product.get_current_price('ZAR')
+            
+            if variation:
+                if price_usd:
+                    price_usd += variation.price_adjustment_usd or Decimal('0.00')
+                if price_zwl:
+                    price_zwl += variation.price_adjustment_zwl or Decimal('0.00')
+                if price_zar:
+                    price_zar += variation.price_adjustment_zar or Decimal('0.00')
+            
+            # Get current price for selected currency
+            if currency == 'USD':
+                current_price = price_usd
+            elif currency == 'ZWL':
+                current_price = price_zwl
+            elif currency == 'ZAR':
+                current_price = price_zar
+            else:
+                current_price = price_usd
+            
+            if current_price is None:
+                errors.append({
+                    'product_id': product_id,
+                    'variation_id': variation_id,
+                    'error': f'Product does not have a price in {currency}'
+                })
+                continue
+            
+            # Calculate subtotal
+            subtotal = current_price * quantity
+            
+            # Get stock info
+            if variation:
+                available_stock = variation.stock_quantity
+            else:
+                available_stock = product.stock_quantity
+            
+            in_stock = True
+            if product.track_stock:
+                in_stock = available_stock > 0
+            
+            enriched_items.append({
+                'product_id': product_id,
+                'variation_id': variation_id,
+                'quantity': quantity,
+                'product_name': product.name,
+                'product_slug': product.slug,
+                'product_sku': product.sku,
+                'product_image_url': image_url,
+                'variation_name': variation_name,
+                'variation_value': variation_value,
+                'price_usd': str(price_usd) if price_usd else None,
+                'price_zwl': str(price_zwl) if price_zwl else None,
+                'price_zar': str(price_zar) if price_zar else None,
+                'current_price': str(current_price),
+                'subtotal': str(subtotal),
+                'available_stock': available_stock,
+                'in_stock': in_stock,
+            })
+        
+        if errors:
+            return Response({
+                'items': enriched_items,
+                'errors': errors,
+                'currency': currency
+            }, status=status.HTTP_200_OK)
+        
+        return Response({
+            'items': enriched_items,
+            'currency': currency
+        })
 
 
 class CartSyncView(APIView):
