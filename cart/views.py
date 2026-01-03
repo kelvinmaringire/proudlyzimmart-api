@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from products.models import Product, ProductVariation
 from .models import PromoCode, Order, OrderItem
+from .services import create_order_from_checkout_session
 from .serializers import (
     CartValidationSerializer,
     CartItemDetailSerializer,
@@ -411,9 +412,9 @@ class CheckoutView(APIView):
     
     POST /api/cart/checkout/
     Validates cart items and creates order records.
-    Requires authentication.
+    Supports both authenticated and guest checkout (user can be None).
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]  # Changed to AllowAny for guest checkout
 
     @transaction.atomic
     def post(self, request):
@@ -603,9 +604,9 @@ class CheckoutView(APIView):
                     'error': 'Invalid promo code'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create order
+        # Create order (user can be None for guest checkout)
         order = Order.objects.create(
-            user=request.user,
+            user=request.user if request.user.is_authenticated else None,
             currency=currency,
             subtotal_usd=subtotal_usd,
             subtotal_zwl=subtotal_zwl,

@@ -30,6 +30,9 @@ urlpatterns = [
     # Cart API endpoints
     path("api/cart/", include("cart.urls")),
     
+    # Checkout API endpoints
+    path("api/checkout/", include("checkout.urls")),
+    
     # JWT Token endpoints
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     

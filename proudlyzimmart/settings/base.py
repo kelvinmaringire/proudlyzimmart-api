@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "accounts",
     "products",
     "cart",
+    "checkout",
     
     # CORS Headers
     "corsheaders",
@@ -399,3 +400,36 @@ WAGTAILADMIN_BASE_URL = "http://example.com"
 # if untrusted users are allowed to upload files -
 # see https://docs.wagtail.org/en/stable/advanced_topics/deploying.html#user-uploaded-files
 WAGTAILDOCS_EXTENSIONS = ['csv', 'docx', 'key', 'odt', 'pdf', 'pptx', 'rtf', 'txt', 'xlsx', 'zip']
+
+############### Checkout Settings ################
+
+# Checkout Session Configuration
+CHECKOUT_SESSION_EXPIRY_MINUTES = int(os.getenv('CHECKOUT_SESSION_EXPIRY_MINUTES', 30))
+
+############### PayFast Settings ################
+
+# PayFast Payment Gateway Configuration
+PAYFAST_MERCHANT_ID = os.getenv('PAYFAST_MERCHANT_ID', '')
+PAYFAST_MERCHANT_KEY = os.getenv('PAYFAST_MERCHANT_KEY', '')
+PAYFAST_PASSPHRASE = os.getenv('PAYFAST_PASSPHRASE', '')
+PAYFAST_SANDBOX = os.getenv('PAYFAST_SANDBOX', 'True').lower() == 'true'
+
+# PayFast URLs
+PAYFAST_URL_SANDBOX = 'https://sandbox.payfast.co.za/eng/process'
+PAYFAST_URL_PRODUCTION = 'https://www.payfast.co.za/eng/process'
+
+############### Shipping API Settings ################
+
+# The Courier Guy API Configuration
+COURIER_GUY_API_KEY = os.getenv('COURIER_GUY_API_KEY', '')
+COURIER_GUY_API_URL = os.getenv('COURIER_GUY_API_URL', 'https://api.thecourierguy.co.za/v1/rates')
+
+# DHL API Configuration
+DHL_API_KEY = os.getenv('DHL_API_KEY', '')
+DHL_API_URL = os.getenv('DHL_API_URL', 'https://api.dhl.com/rate')
+
+# Pep Paxi API Configuration
+PEP_PAXI_API_KEY = os.getenv('PEP_PAXI_API_KEY', '')
+PEP_PAXI_API_URL = os.getenv('PEP_PAXI_API_URL', 'https://api.peppaxi.co.za/v1/rates')
+
+############### End Checkout Settings ################
