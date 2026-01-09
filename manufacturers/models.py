@@ -43,9 +43,9 @@ class Manufacturer(models.Model):
         help_text="Contact email"
     )
     phone = models.CharField(
-        max_length=20,
+        max_length=30,
         blank=True,
-        help_text="Contact phone number"
+        help_text="Contact phone number (international format accepted)"
     )
     address = models.TextField(
         blank=True,
@@ -231,8 +231,8 @@ class ManufacturerSubmission(models.Model):
         help_text="Contact email address"
     )
     phone = models.CharField(
-        max_length=20,
-        help_text="Contact phone number"
+        max_length=30,
+        help_text="Contact phone number (international format accepted)"
     )
     
     # Company Details

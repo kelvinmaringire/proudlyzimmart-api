@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(help_text='Contact person name', max_length=255)),
                 ('email', models.EmailField(help_text='Contact email address')),
-                ('phone', models.CharField(help_text='Contact phone number', max_length=20)),
+                ('phone', models.CharField(help_text='Contact phone number (international format accepted)', max_length=30)),
                 ('company_name', models.CharField(blank=True, help_text='Company/Business name', max_length=255)),
                 ('description', models.TextField(blank=True, help_text='Company description and what products/services you offer')),
                 ('website', models.URLField(blank=True, help_text='Company website URL')),
