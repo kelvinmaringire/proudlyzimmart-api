@@ -2,8 +2,11 @@
 Service layer for manufacturers business logic.
 Handles manufacturer-related operations and queries.
 """
+import os
 from django.db.models import Q, Count
-from .models import Manufacturer
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import Manufacturer, ManufacturerSubmission
 
 
 def get_featured_manufacturers(limit=20):
@@ -152,4 +155,81 @@ def get_manufacturers_with_products(min_product_count=1, limit=50):
     ).filter(
         product_count__gte=min_product_count
     )[:limit]
+
+
+def send_submission_notification_email(submission):
+    """
+    Send email notification to admin when a manufacturer submission is created.
+    
+    Args:
+        submission: ManufacturerSubmission instance
+    
+    Returns:
+        Number of emails sent (0 or 1)
+    """
+    # Get admin email from environment or use EMAIL_HOST_USER
+    admin_email = os.getenv('ADMIN_EMAIL', settings.EMAIL_HOST_USER)
+    
+    if not admin_email:
+        # Fallback to DEFAULT_FROM_EMAIL if ADMIN_EMAIL and EMAIL_HOST_USER are not set
+        admin_email = settings.DEFAULT_FROM_EMAIL
+    
+    if not admin_email:
+        # If still no email, log warning and return
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("No admin email configured. Cannot send submission notification.")
+        return 0
+    
+    # Prepare email subject
+    company_name = submission.company_name or "No Company Name"
+    subject = f"New Manufacturer Application - {company_name}"
+    
+    # Prepare email body
+    body = f"""
+New Manufacturer Application Received
+
+Contact Information:
+- Name: {submission.name}
+- Email: {submission.email}
+- Phone: {submission.phone}
+
+Company Details:
+- Company Name: {submission.company_name or 'Not provided'}
+- Website: {submission.website or 'Not provided'}
+- Description: {submission.description or 'Not provided'}
+
+Location:
+- City: {submission.city or 'Not provided'}
+- Province: {submission.province or 'Not provided'}
+- Country: {submission.country}
+
+Product Information:
+- Product Types: {submission.product_types or 'Not provided'}
+- Product Categories: {submission.product_categories or 'Not provided'}
+
+Submitted: {submission.created_at.strftime('%Y-%m-%d %H:%M:%S')}
+Status: {submission.get_status_display()}
+
+---
+This is an automated notification from ProudlyZimmart.
+Please review this submission in the admin dashboard.
+"""
+    
+    try:
+        # Send email
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[admin_email],
+            fail_silently=False,
+        )
+        return 1
+    except Exception as e:
+        # Log error but don't fail the submission
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send submission notification email: {str(e)}")
+        return 0
 

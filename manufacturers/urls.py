@@ -9,6 +9,9 @@ from .views import (
     ManufacturerProductsView,
     ManufacturerFeaturedView,
     ManufacturerSearchView,
+    ManufacturerSubmissionCreateView,
+    ManufacturerSubmissionListView,
+    ManufacturerSubmissionDetailView,
 )
 
 app_name = 'manufacturers'
@@ -22,5 +25,10 @@ urlpatterns = [
     
     # Advanced Search
     path('search/', ManufacturerSearchView.as_view(), name='manufacturer-search'),
+    
+    # Manufacturer Submissions
+    path('submit/', ManufacturerSubmissionCreateView.as_view(), name='manufacturer-submit'),
+    path('submissions/', ManufacturerSubmissionListView.as_view(), name='manufacturer-submission-list'),
+    path('submissions/<int:pk>/', ManufacturerSubmissionDetailView.as_view(), name='manufacturer-submission-detail'),
 ]
 

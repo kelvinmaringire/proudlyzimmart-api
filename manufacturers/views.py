@@ -10,12 +10,15 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 
-from .models import Manufacturer
+from .models import Manufacturer, ManufacturerSubmission
 from .serializers import (
     ManufacturerListSerializer,
     ManufacturerDetailSerializer,
     ManufacturerCreateUpdateSerializer,
+    ManufacturerSubmissionSerializer,
+    ManufacturerSubmissionAdminSerializer,
 )
+from .services import send_submission_notification_email
 
 
 class ManufacturerListCreateView(generics.ListCreateAPIView):
@@ -255,3 +258,111 @@ class ManufacturerSearchView(APIView):
             'page_size': page_size,
             'results': serializer.data
         })
+
+
+# ==================== Manufacturer Submission Views ====================
+
+class ManufacturerSubmissionCreateView(generics.CreateAPIView):
+    """
+    Create a new manufacturer submission (public endpoint).
+    
+    POST /api/manufacturers/submit/
+    Submit an application to become a manufacturer/seller on ProudlyZimmart.
+    """
+    queryset = ManufacturerSubmission.objects.all()
+    serializer_class = ManufacturerSubmissionSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def create(self, request, *args, **kwargs):
+        """Create submission and send email notification."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submission = serializer.save()
+        
+        # Send email notification
+        try:
+            send_submission_notification_email(submission)
+        except Exception as e:
+            # Log error but don't fail the submission
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to send submission notification: {str(e)}")
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                'message': 'Your application has been submitted successfully. We will review it and get back to you soon.',
+                'submission': serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+
+
+class ManufacturerSubmissionListView(generics.ListAPIView):
+    """
+    List all manufacturer submissions (admin only).
+    
+    GET /api/manufacturers/submissions/
+    Returns all submissions with filtering options.
+    """
+    queryset = ManufacturerSubmission.objects.all()
+    serializer_class = ManufacturerSubmissionAdminSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'email', 'company_name', 'phone']
+    ordering_fields = ['created_at', 'status', 'name']
+    ordering = ['-created_at']
+    filterset_fields = {
+        'status': ['exact'],
+        'province': ['exact', 'icontains'],
+        'city': ['exact', 'icontains'],
+        'country': ['exact'],
+    }
+    
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class ManufacturerSubmissionDetailView(generics.RetrieveUpdateAPIView):
+    """
+    Retrieve or update a manufacturer submission (admin only).
+    
+    GET /api/manufacturers/submissions/<id>/ - Get submission details
+    PATCH /api/manufacturers/submissions/<id>/ - Update submission status/notes
+    """
+    queryset = ManufacturerSubmission.objects.all()
+    serializer_class = ManufacturerSubmissionAdminSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    
+    def get_serializer_context(self):
+        """Add request to context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def update(self, request, *args, **kwargs):
+        """Update submission and handle status changes."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        
+        # Check if status is being changed
+        old_status = instance.status
+        self.perform_update(serializer)
+        new_status = serializer.instance.status
+        
+        # If status changed from pending, ensure reviewed_by and reviewed_at are set
+        if old_status == 'pending' and new_status != 'pending':
+            if not serializer.instance.reviewed_by:
+                serializer.instance.reviewed_by = request.user
+            if not serializer.instance.reviewed_at:
+                from django.utils import timezone
+                serializer.instance.reviewed_at = timezone.now()
+                serializer.instance.save(update_fields=['reviewed_by', 'reviewed_at'])
+        
+        return Response(serializer.data)

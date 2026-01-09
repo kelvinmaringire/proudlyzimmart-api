@@ -3,12 +3,15 @@ Manufacturer models for ProudlyZimmart marketplace.
 Handles manufacturer/company profiles (auto-biography) of suppliers.
 """
 from django.db import models
+from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from django.urls import reverse
 from wagtail.admin.panels import (
     FieldPanel, MultiFieldPanel, FieldRowPanel
 )
 from wagtail.images.models import Image
+
+User = get_user_model()
 
 
 class Manufacturer(models.Model):
@@ -206,4 +209,155 @@ class Manufacturer(models.Model):
             FieldPanel('meta_title'),
             FieldPanel('meta_description'),
         ], heading="SEO Metadata"),
+    ]
+
+
+class ManufacturerSubmission(models.Model):
+    """Form submission model for "Sell on ProudlyZimmart" applications."""
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('reviewed', 'Reviewed'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    # Contact Information
+    name = models.CharField(
+        max_length=255,
+        help_text="Contact person name"
+    )
+    email = models.EmailField(
+        help_text="Contact email address"
+    )
+    phone = models.CharField(
+        max_length=20,
+        help_text="Contact phone number"
+    )
+    
+    # Company Details
+    company_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Company/Business name"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Company description and what products/services you offer"
+    )
+    website = models.URLField(
+        blank=True,
+        help_text="Company website URL"
+    )
+    
+    # Location
+    city = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="City"
+    )
+    province = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Province (e.g., Harare, Bulawayo, Midlands)"
+    )
+    country = models.CharField(
+        max_length=100,
+        default="Zimbabwe",
+        help_text="Country"
+    )
+    
+    # Product Information
+    product_types = models.TextField(
+        blank=True,
+        help_text="Types of products you want to sell (e.g., Ready to Buy, Collect, Enquire, Promotional)"
+    )
+    product_categories = models.TextField(
+        blank=True,
+        help_text="Product categories you're interested in (e.g., Musika, Grombi, Fashani, Technology)"
+    )
+    
+    # Status & Review
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        help_text="Submission status"
+    )
+    admin_notes = models.TextField(
+        blank=True,
+        help_text="Admin notes and review comments"
+    )
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_submissions',
+        help_text="Admin user who reviewed this submission"
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this submission was reviewed"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['email']),
+        ]
+        verbose_name = "Manufacturer Submission"
+        verbose_name_plural = "Manufacturer Submissions"
+    
+    def __str__(self):
+        company = self.company_name or "No Company"
+        return f"{self.name} - {company} ({self.status})"
+    
+    # Wagtail Panels Configuration
+    panels = [
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('name'),
+                FieldPanel('email'),
+            ]),
+            FieldPanel('phone'),
+        ], heading="Contact Information"),
+        
+        MultiFieldPanel([
+            FieldPanel('company_name'),
+            FieldPanel('description'),
+            FieldPanel('website'),
+        ], heading="Company Details"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('city'),
+                FieldPanel('province'),
+            ]),
+            FieldPanel('country'),
+        ], heading="Location"),
+        
+        MultiFieldPanel([
+            FieldPanel('product_types'),
+            FieldPanel('product_categories'),
+        ], heading="Product Information"),
+        
+        MultiFieldPanel([
+            FieldRowPanel([
+                FieldPanel('status'),
+                FieldPanel('reviewed_by'),
+            ]),
+            FieldPanel('reviewed_at'),
+        ], heading="Status & Review"),
+        
+        MultiFieldPanel([
+            FieldPanel('admin_notes'),
+        ], heading="Admin Notes"),
     ]

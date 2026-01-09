@@ -3,7 +3,7 @@ Serializers for the manufacturers app.
 Handles serialization of manufacturer profiles and related data.
 """
 from rest_framework import serializers
-from .models import Manufacturer
+from .models import Manufacturer, ManufacturerSubmission
 
 
 class ManufacturerListSerializer(serializers.ModelSerializer):
@@ -169,6 +169,61 @@ class ManufacturerCreateUpdateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({"logo_id": "Image not found."})
             else:
                 validated_data['logo'] = None
+        
+        return super().update(instance, validated_data)
+
+
+class ManufacturerSubmissionSerializer(serializers.ModelSerializer):
+    """Serializer for creating manufacturer submissions (public endpoint)."""
+    
+    class Meta:
+        model = ManufacturerSubmission
+        fields = (
+            'name', 'email', 'phone',
+            'company_name', 'description', 'website',
+            'city', 'province', 'country',
+            'product_types', 'product_categories'
+        )
+    
+    def validate(self, data):
+        """Validate submission data."""
+        # Ensure required fields are present
+        if not data.get('name'):
+            raise serializers.ValidationError("Name is required.")
+        if not data.get('email'):
+            raise serializers.ValidationError("Email is required.")
+        if not data.get('phone'):
+            raise serializers.ValidationError("Phone number is required.")
+        return data
+
+
+class ManufacturerSubmissionAdminSerializer(serializers.ModelSerializer):
+    """Serializer for admin viewing/updating manufacturer submissions."""
+    reviewed_by_name = serializers.CharField(source='reviewed_by.username', read_only=True)
+    
+    class Meta:
+        model = ManufacturerSubmission
+        fields = (
+            'id', 'name', 'email', 'phone',
+            'company_name', 'description', 'website',
+            'city', 'province', 'country',
+            'product_types', 'product_categories',
+            'status', 'admin_notes', 'reviewed_by', 'reviewed_by_name',
+            'reviewed_at', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+    
+    def update(self, instance, validated_data):
+        """Update submission and set reviewed_by/reviewed_at if status changes."""
+        # If status is being changed from pending, set reviewed_by and reviewed_at
+        if 'status' in validated_data:
+            new_status = validated_data['status']
+            if instance.status == 'pending' and new_status != 'pending':
+                if not validated_data.get('reviewed_by'):
+                    validated_data['reviewed_by'] = self.context['request'].user
+                if not validated_data.get('reviewed_at'):
+                    from django.utils import timezone
+                    validated_data['reviewed_at'] = timezone.now()
         
         return super().update(instance, validated_data)
 

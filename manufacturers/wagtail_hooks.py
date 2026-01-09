@@ -3,11 +3,11 @@ Wagtail ModelAdmin configuration for manufacturers app.
 Provides Wagtail admin interface for managing manufacturers with structured panels.
 """
 from wagtail_modeladmin.options import (
-    ModelAdmin, modeladmin_register
+    ModelAdmin, ModelAdminGroup, modeladmin_register
 )
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from .models import Manufacturer
+from .models import Manufacturer, ManufacturerSubmission
 
 
 class ManufacturerAdmin(ModelAdmin):
@@ -51,6 +51,39 @@ class ManufacturerAdmin(ModelAdmin):
     product_count.short_description = "Products"
 
 
-# Register the Manufacturer admin
-modeladmin_register(ManufacturerAdmin)
+class ManufacturerSubmissionAdmin(ModelAdmin):
+    """Wagtail admin interface for ManufacturerSubmission model."""
+    model = ManufacturerSubmission
+    menu_label = "Form Submissions"
+    menu_icon = "form"
+    add_to_settings_menu = False
+    exclude_from_explorer = False
+    list_display = (
+        "name", "company_name", "email", "phone",
+        "status", "province", "city", "created_at"
+    )
+    list_filter = (
+        "status", "province", "city", "country", "created_at"
+    )
+    search_fields = ("name", "email", "company_name", "phone", "description")
+    ordering = ("-created_at",)
+    
+    def get_queryset(self, request):
+        """Optimize queryset with select_related."""
+        return super().get_queryset(request).select_related('reviewed_by')
+
+
+# Group Manufacturers and Submissions under a single menu section
+class ManufacturersAdminGroup(ModelAdminGroup):
+    menu_label = "Manufacturers"  # Main menu label
+    menu_icon = "group"  # Main menu icon
+    menu_order = 210  # Menu order in sidebar (after Products)
+    items = (
+        ManufacturerAdmin,
+        ManufacturerSubmissionAdmin,
+    )
+
+
+# Register the Manufacturers group (this registers all models under one menu section)
+modeladmin_register(ManufacturersAdminGroup)
 
