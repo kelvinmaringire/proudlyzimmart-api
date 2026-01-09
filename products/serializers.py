@@ -20,6 +20,34 @@ from .models import (
 User = get_user_model()
 
 
+class ManufacturerSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for Manufacturer in product serializers."""
+    logo_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = None  # Will be set dynamically
+        fields = (
+            'id', 'name', 'slug', 'short_description',
+            'logo_url', 'city', 'province', 'country',
+            'website', 'is_verified', 'is_featured'
+        )
+    
+    def __init__(self, *args, **kwargs):
+        # Import here to avoid circular imports
+        from manufacturers.models import Manufacturer
+        self.Meta.model = Manufacturer
+        super().__init__(*args, **kwargs)
+    
+    def get_logo_url(self, obj):
+        """Get full logo URL."""
+        if obj and obj.logo and obj.logo.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.logo.file.url)
+            return obj.logo.file.url
+        return None
+
+
 class CategorySerializer(serializers.ModelSerializer):
     """Serializer for Category model."""
     children = serializers.SerializerMethodField()
@@ -161,6 +189,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for product lists."""
     category = CategorySerializer(read_only=True)
     product_type = ProductTypeSerializer(read_only=True)
+    manufacturer = ManufacturerSerializer(read_only=True)
     primary_image = serializers.SerializerMethodField()
     current_price_usd = serializers.SerializerMethodField()
     current_price_zwl = serializers.SerializerMethodField()
@@ -172,7 +201,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = (
             'id', 'name', 'slug', 'sku', 'short_description',
-            'category', 'product_type', 'brand', 'is_proudlyzimmart_brand',
+            'category', 'product_type', 'brand', 'manufacturer', 'is_proudlyzimmart_brand',
             'price_usd', 'price_zwl', 'price_zar',
             'sale_price_usd', 'sale_price_zwl', 'sale_price_zar',
             'current_price_usd', 'current_price_zwl', 'current_price_zar',
@@ -233,6 +262,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for product detail view."""
     category = CategorySerializer(read_only=True)
     product_type = ProductTypeSerializer(read_only=True)
+    manufacturer = ManufacturerSerializer(read_only=True)
     images = ProductImageSerializer(many=True, read_only=True)
     videos = serializers.SerializerMethodField()
     variations = ProductVariationSerializer(many=True, read_only=True)
@@ -356,9 +386,10 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """Create product with category and product_type."""
+        """Create product with category, product_type, and manufacturer."""
         category_id = validated_data.pop('category_id', None)
         product_type_id = validated_data.pop('product_type_id')
+        manufacturer_id = validated_data.pop('manufacturer_id', None)
         
         if category_id:
             try:
@@ -373,12 +404,21 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         except ProductType.DoesNotExist:
             raise serializers.ValidationError({"product_type_id": "Product type not found."})
         
+        if manufacturer_id:
+            from manufacturers.models import Manufacturer
+            try:
+                manufacturer = Manufacturer.objects.get(id=manufacturer_id)
+                validated_data['manufacturer'] = manufacturer
+            except Manufacturer.DoesNotExist:
+                raise serializers.ValidationError({"manufacturer_id": "Manufacturer not found."})
+        
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        """Update product with category and product_type."""
+        """Update product with category, product_type, and manufacturer."""
         category_id = validated_data.pop('category_id', None)
         product_type_id = validated_data.pop('product_type_id', None)
+        manufacturer_id = validated_data.pop('manufacturer_id', None)
         
         if category_id is not None:
             if category_id:
@@ -396,6 +436,17 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
                 validated_data['product_type'] = product_type
             except ProductType.DoesNotExist:
                 raise serializers.ValidationError({"product_type_id": "Product type not found."})
+        
+        if manufacturer_id is not None:
+            from manufacturers.models import Manufacturer
+            if manufacturer_id:
+                try:
+                    manufacturer = Manufacturer.objects.get(id=manufacturer_id)
+                    validated_data['manufacturer'] = manufacturer
+                except Manufacturer.DoesNotExist:
+                    raise serializers.ValidationError({"manufacturer_id": "Manufacturer not found."})
+            else:
+                validated_data['manufacturer'] = None
         
         return super().update(instance, validated_data)
 

@@ -97,10 +97,13 @@ class Product(ClusterableModel):
     
     # Branding (must be Zimbabwean)
     brand = models.CharField(max_length=200, help_text="Brand name (must be Zimbabwean)")
-    manufacturer = models.CharField(
-        max_length=200,
+    manufacturer = models.ForeignKey(
+        'manufacturers.Manufacturer',
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
-        help_text="Manufacturer name"
+        related_name='products',
+        help_text="Manufacturer/Company supplying this product"
     )
     is_proudlyzimmart_brand = models.BooleanField(
         default=False,
