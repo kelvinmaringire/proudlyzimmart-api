@@ -251,6 +251,10 @@ class ManufacturerSubmission(models.Model):
     )
     
     # Location
+    address = models.TextField(
+        blank=True,
+        help_text="Street address"
+    )
     city = models.CharField(
         max_length=100,
         blank=True,
@@ -259,11 +263,11 @@ class ManufacturerSubmission(models.Model):
     province = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Province (e.g., Harare, Bulawayo, Midlands)"
+        help_text="Province/State/Region"
     )
     country = models.CharField(
         max_length=100,
-        default="Zimbabwe",
+        blank=True,
         help_text="Country"
     )
     
@@ -337,6 +341,7 @@ class ManufacturerSubmission(models.Model):
         ], heading="Company Details"),
         
         MultiFieldPanel([
+            FieldPanel('address'),
             FieldRowPanel([
                 FieldPanel('city'),
                 FieldPanel('province'),

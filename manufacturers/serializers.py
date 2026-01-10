@@ -181,7 +181,7 @@ class ManufacturerSubmissionSerializer(serializers.ModelSerializer):
         fields = (
             'name', 'email', 'phone',
             'company_name', 'description', 'website',
-            'city', 'province', 'country',
+            'address', 'city', 'province', 'country',
             'product_types', 'product_categories'
         )
     
@@ -206,7 +206,7 @@ class ManufacturerSubmissionAdminSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'name', 'email', 'phone',
             'company_name', 'description', 'website',
-            'city', 'province', 'country',
+            'address', 'city', 'province', 'country',
             'product_types', 'product_categories',
             'status', 'admin_notes', 'reviewed_by', 'reviewed_by_name',
             'reviewed_at', 'created_at', 'updated_at'
