@@ -299,16 +299,18 @@ class ManufacturerSubmissionCreateView(generics.CreateAPIView):
         )
 
 
-class ManufacturerSubmissionListView(generics.ListAPIView):
+class ManufacturerSubmissionListView(generics.ListCreateAPIView):
     """
-    List all manufacturer submissions (admin only).
+    List all manufacturer submissions or create a new submission (public access).
     
     GET /api/manufacturers/submissions/
     Returns all submissions with filtering options.
+    
+    POST /api/manufacturers/submissions/
+    Submit an application to become a manufacturer/seller on ProudlyZimmart.
     """
     queryset = ManufacturerSubmission.objects.all()
-    serializer_class = ManufacturerSubmissionAdminSerializer
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    permission_classes = [permissions.AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'email', 'company_name', 'phone']
     ordering_fields = ['created_at', 'status', 'name']
@@ -319,6 +321,37 @@ class ManufacturerSubmissionListView(generics.ListAPIView):
         'city': ['exact', 'icontains'],
         'country': ['exact'],
     }
+    
+    def get_serializer_class(self):
+        """Return appropriate serializer based on method."""
+        if self.request.method == 'POST':
+            return ManufacturerSubmissionSerializer
+        return ManufacturerSubmissionAdminSerializer
+    
+    def create(self, request, *args, **kwargs):
+        """Create submission and send email notification."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submission = serializer.save()
+        
+        # Send email notification
+        try:
+            send_submission_notification_email(submission)
+        except Exception as e:
+            # Log error but don't fail the submission
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to send submission notification: {str(e)}")
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                'message': 'Your application has been submitted successfully. We will review it and get back to you soon.',
+                'submission': serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
     
     def get_serializer_context(self):
         """Add request to context."""

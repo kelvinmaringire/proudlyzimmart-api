@@ -30,6 +30,9 @@ urlpatterns = [
     # Manufacturers API endpoints
     path("api/manufacturers/", include("manufacturers.urls")),
     
+    # Blog API endpoints
+    path("api/blog/", include("blog.urls")),
+    
     # Cart API endpoints
     path("api/cart/", include("cart.urls")),
     

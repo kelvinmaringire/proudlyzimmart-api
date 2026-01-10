@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.db import migrations, models
 import django.db.models.deletion
+from django.db import connection
 
 
 class Migration(migrations.Migration):
@@ -41,17 +42,17 @@ class Migration(migrations.Migration):
                 'ordering': ['-created_at'],
             },
         ),
-        migrations.AddIndex(
-            model_name='manufacturersubmission',
-            index=models.Index(fields=['status'], name='manufacturer_status_idx'),
+        migrations.RunSQL(
+            sql="CREATE INDEX IF NOT EXISTS manufacturer_status_idx ON manufacturers_manufacturersubmission (status);",
+            reverse_sql="DROP INDEX IF EXISTS manufacturer_status_idx;",
         ),
-        migrations.AddIndex(
-            model_name='manufacturersubmission',
-            index=models.Index(fields=['created_at'], name='manufacturer_created_idx'),
+        migrations.RunSQL(
+            sql="CREATE INDEX IF NOT EXISTS manufacturer_created_idx ON manufacturers_manufacturersubmission (created_at);",
+            reverse_sql="DROP INDEX IF EXISTS manufacturer_created_idx;",
         ),
-        migrations.AddIndex(
-            model_name='manufacturersubmission',
-            index=models.Index(fields=['email'], name='manufacturer_email_idx'),
+        migrations.RunSQL(
+            sql="CREATE INDEX IF NOT EXISTS manufacturer_email_idx ON manufacturers_manufacturersubmission (email);",
+            reverse_sql="DROP INDEX IF EXISTS manufacturer_email_idx;",
         ),
     ]
 
