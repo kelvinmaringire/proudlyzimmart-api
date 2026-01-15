@@ -32,6 +32,7 @@ BASE_DIR = PROJECT_DIR.parent
 INSTALLED_APPS = [
     "home",
     "search",
+    "core",
     "accounts",
     "products",
     "manufacturers",
@@ -64,6 +65,7 @@ INSTALLED_APPS = [
     "dj_rest_auth.registration",
     
     "wagtail.contrib.forms",
+    "wagtail.contrib.settings",
     "wagtail.contrib.redirects",
     "wagtail.embeds",
     "wagtail.sites",

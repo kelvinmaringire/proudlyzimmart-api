@@ -24,6 +24,9 @@ urlpatterns = [
     # Accounts API endpoints
     path("api/accounts/", include("accounts.urls")),
     
+    # Core API endpoints
+    path("api/core/", include("core.urls")),
+    
     # Products API endpoints
     path("api/products/", include("products.urls")),
     
