@@ -25,50 +25,45 @@ FULL_RICH_TEXT_FEATURES = [
     "strikethrough",
 ]
 
+RICH_TEXT_OPTIONS = {
+    "blank": True,
+    "features": FULL_RICH_TEXT_FEATURES,
+}
 
 @register_setting
 class CoreSiteSettings(BaseSiteSetting):
     """Site-wide core content managed via Wagtail Settings."""
 
-    # Policy and informational content
     privacy_policy = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Privacy policy content."
     )
     terms_and_conditions = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Terms and conditions content."
     )
     return_refund_policy = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Return and refund policy content."
     )
     faqs = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Frequently asked questions content."
     )
     about_us = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="About us content."
     )
 
-    # Announcement bar
     announcement_enabled = models.BooleanField(
         default=False,
         help_text="Toggle the announcement bar on/off."
     )
     announcement_bar_text = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Announcement bar text."
     )
 
-    # Contact information
     contact_email = models.EmailField(
         blank=True,
         help_text="Primary contact email address."
@@ -79,12 +74,10 @@ class CoreSiteSettings(BaseSiteSetting):
         help_text="Primary contact phone number."
     )
     contact_address = RichTextField(
-        blank=True,
-        features=FULL_RICH_TEXT_FEATURES,
+        **RICH_TEXT_OPTIONS,
         help_text="Contact address or location details."
     )
 
-    # Social links
     facebook_url = models.URLField(blank=True)
     instagram_url = models.URLField(blank=True)
     x_url = models.URLField(blank=True)
