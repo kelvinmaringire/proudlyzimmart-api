@@ -35,11 +35,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy the app source
 COPY . .
 
-# Entrypoint script permissions
-RUN chmod +x entrypoint.sh
-
 # Expose Django port
 EXPOSE 8000
 
-# Start container
-CMD ["./entrypoint.sh"]
+# Start container (use sh to avoid needing chmod on host when .:/app is mounted)
+CMD ["sh", "entrypoint.sh"]

@@ -96,6 +96,16 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+CORS_ALLOW_ALL_ORIGINS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:9000",
+    "http://127.0.0.1:9000",
+    "http://0.0.0.0:8000",
+    "https://proudlyzimmart.com",
+    "https://www.proudlyzimmart.com",
+]
+
 # Site ID for django.contrib.sites (required by allauth)
 SITE_ID = 1
 
