@@ -11,7 +11,7 @@ if not SECRET_KEY:
 # Allowed hosts from environment
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
 if not any(ALLOWED_HOSTS):
-    raise ValueError("ALLOWED_HOSTS environment variable must be set in production!")
+    raise ValueError("ALLOWED_HOSTS environment variable must be sett in production!")
 
 # ManifestStaticFilesStorage is recommended in production, to prevent
 # outdated JavaScript / CSS assets being served from cache
